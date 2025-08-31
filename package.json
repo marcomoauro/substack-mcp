@@ -1,6 +1,6 @@
 {
   "name": "substack-mcp",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "A Model Context Protocol (MCP) Server for Substack enabling LLM clients to interact with Substack's API for automations like creating posts, managing drafts, and more.",
   "type": "module",
   "main": "src/index.js",
