@@ -17,9 +17,31 @@ export const createDraftPostSchema = z.object({
   body: z
     .string()
     .describe(
-      "The body of the post to be created."
+      "The body of the post to be created. Either plain text (paragraphs separated by blank lines) or a JSON string of a Substack document, e.g. {\"type\":\"doc\",\"content\":[...]}."
     ),
 });
+
+const parseBody = (body) => {
+  try {
+    const doc = JSON.parse(body);
+    if (doc && doc.type === 'doc') {
+      return doc;
+    }
+  } catch (error) {
+    // not JSON, treat as plain text
+  }
+
+  return {
+    type: 'doc',
+    content: body
+      .split(/\n+/)
+      .filter(paragraph => paragraph.trim() !== '')
+      .map(paragraph => ({
+        type: 'paragraph',
+        content: [{type: 'text', text: paragraph}],
+      })),
+  };
+};
 
 export const createDraftPostHandler = async (args) => {
   const validatedArgs = createDraftPostSchema.parse(args);
@@ -35,7 +57,7 @@ export const createDraftPostHandler = async (args) => {
 
   substack_post.setTitle(title)
   substack_post.setSubtitle(subtitle)
-  substack_post.setBody(body)
+  substack_post.setBody(parseBody(body))
 
   await substack_api.postDraft(substack_post.getDraft())
 
