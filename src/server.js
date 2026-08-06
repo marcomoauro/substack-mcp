@@ -4,7 +4,6 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import {z} from "zod";
-import {zodToJsonSchema} from "zod-to-json-schema";
 import {createDraftPostSchema, createDraftPostHandler} from "./tools/create_draft_post.js";
 
 export const tools = {
@@ -33,7 +32,8 @@ export function createServer() {
       tools: Object.entries(tools).map(([name, {description, schema}]) => ({
         name,
         description,
-        inputSchema: zodToJsonSchema(schema),
+        // Same options the SDK's own zod-4 compat layer uses for tool input schemas.
+        inputSchema: z.toJSONSchema(schema, {target: "draft-7", io: "input"}),
       })),
     };
   });
@@ -53,7 +53,7 @@ export function createServer() {
       };
     } catch (error) {
       if (error instanceof z.ZodError) {
-        throw new Error(`Invalid input: ${JSON.stringify(error.errors)}`);
+        throw new Error(`Invalid input: ${JSON.stringify(error.issues)}`);
       }
       throw error;
     }

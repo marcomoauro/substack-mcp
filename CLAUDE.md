@@ -69,10 +69,25 @@ literals (`{a: 1}`, not `{ a: 1 }`).
   non-2xx, so `SubstackApi.handleResponse` is what turns a failing status into an error
   (`SubstackAPIException: <status> <statusText>`); it also serializes the body and sets
   `Content-Type` by hand, which axios used to do implicitly.
+- **JSON Schema comes from zod itself** — `z.toJSONSchema(schema, {target: 'draft-7', io: 'input'})`,
+  no `zod-to-json-schema` dependency. Those two options are not decoration: they mirror what the
+  SDK's own `server/zod-json-schema-compat.js` passes for tool input schemas, so the published
+  schema stays consistent with anything the SDK generates. `io: 'input'` deliberately omits
+  `additionalProperties: false` — a zod object strips unknown keys rather than rejecting them.
+  Do not reintroduce `zod-to-json-schema`: on a zod 4 schema it returns a bare `{$schema}`
+  **without throwing**, which publishes a parameterless tool to every client.
+- **`ZodError` details live on `.issues`, not `.errors`** (zod 4 renamed it). Reading the old
+  name yields `Invalid input: undefined` and silently strips every detail from the error the
+  client sees.
 
 ## Verifying the server actually works
 
-Tests passing is not proof the binary runs. Drive the real entrypoint over stdio:
+`src/index.spec.js` now automates this: it spawns the real entrypoint as a child process,
+completes the handshake over stdio and asserts the env-var guard. It is the only coverage
+`src/index.js` has, since the file does its work at import time.
+
+Still drive it by hand when changing the transport or the protocol surface — the assertions
+only check what they were told to check:
 
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1.0.0"}}}' \
