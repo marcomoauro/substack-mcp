@@ -54,7 +54,10 @@ function redact(value, seen = new WeakSet()) {
     : Object.fromEntries(
       Object.entries(value).map(([key, item]) => [
         key,
-        SECRET_KEY.test(key) ? REDACTED : redact(item, seen),
+        // A boolean under a secret key is kept: one bit cannot leak a credential, and the
+        // diagnostic flags worth logging are named after the secret they describe. Redacting
+        // `has_auth_token` would silently turn the only useful part of the line into `***`.
+        SECRET_KEY.test(key) && typeof item !== 'boolean' ? REDACTED : redact(item, seen),
       ])
     );
 

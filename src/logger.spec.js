@@ -17,8 +17,9 @@ afterEach(() => {
 });
 
 /**
- * Captures what the logger writes to stderr, and asserts nothing reaches stdout — on a stdio
- * transport stdout belongs to the JSON-RPC stream.
+ * Records what the logger writes to each stream and returns both. It asserts nothing itself —
+ * `logLines` below is what checks that stdout stayed empty, since on a stdio transport stdout
+ * belongs to the JSON-RPC stream. Use `logLines` unless a test needs the raw chunks.
  */
 function capture(run) {
   const stderr = [];
@@ -186,6 +187,23 @@ describe('logger — redaction', () => {
 
     // The point of redacting by key: the value must not survive anywhere in the line.
     assert.doesNotMatch(JSON.stringify(line), /super-secret|hunter2|xyz/);
+  });
+
+  // `has_auth_token` matches the pattern twice over, and redacting it produced
+  // `"has_auth_token":"***"` — a line stating only that the field exists. A boolean cannot
+  // carry a credential, so it survives; anything else under the same key does not.
+  test('keeps a boolean flag named after a secret, but not a string value', () => {
+    process.env.SUBSTACK_MCP_LOG_LEVEL = 'debug';
+
+    const [line] = logLines(() => logger.debug('substack_api.created', {
+      has_auth_token: true,
+      has_password: false,
+      auth_token: 'super-secret',
+    }));
+
+    assert.equal(line.has_auth_token, true);
+    assert.equal(line.has_password, false);
+    assert.equal(line.auth_token, '***');
   });
 
   // The counterpart of the anchored `sid` alternative: matching it as a substring would blank

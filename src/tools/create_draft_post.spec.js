@@ -172,6 +172,32 @@ describe('createDraftPostHandler — logging', () => {
     return line;
   }
 
+  test('records the arguments it received and the draft it built from them', async () => {
+    const lines = await captureLogs(() => createDraftPostHandler(VALID_ARGS));
+
+    assert.deepEqual(find(lines, 'create_draft_post.start').args, VALID_ARGS);
+
+    const {draft} = find(lines, 'create_draft_post.draft.built');
+    assert.equal(draft.draft_title, 'My title');
+    assert.equal(draft.draft_subtitle, 'My subtitle');
+    // The serialized document, which is the field the Substack editor actually rejects.
+    assert.equal(draft.draft_body, JSON.stringify({
+      type: 'doc',
+      content: [{type: 'paragraph', content: [{type: 'text', text: 'The body'}]}],
+    }));
+  });
+
+  // Over MCP the SDK rejects first, so this line only appears on a direct call — which is how
+  // anything embedding the handler outside the server would use it.
+  test('records the validation issues when the arguments are rejected', async () => {
+    const lines = await captureLogs(
+      () => createDraftPostHandler({title: 'title only'}).catch(() => {})
+    );
+
+    const invalid = find(lines, 'create_draft_post.args.invalid');
+    assert.deepEqual(invalid.issues.map((issue) => issue.path.join('.')).sort(), ['body', 'subtitle']);
+  });
+
   test('records how the body was interpreted', async () => {
     const lines = await captureLogs(() => createDraftPostHandler(VALID_ARGS));
 

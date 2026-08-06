@@ -112,7 +112,7 @@ is written:
 |---|---|
 | `silent` | nothing |
 | `error` | failed calls only |
-| `warn` | the above, plus calls the server rejected (bad arguments) |
+| `warn` | the above, plus every answer the client received as an error — including calls rejected for bad arguments before they ran |
 | `info` *(default)* | the above, plus every tool call, request and response |
 | `debug` | the above, plus full payloads and every JSON-RPC message |
 

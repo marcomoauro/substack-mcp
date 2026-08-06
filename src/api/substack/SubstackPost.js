@@ -1,8 +1,9 @@
 import {logger} from "../../logger.js";
 
-// Only the constructor and the methods on the current code path log, all at `debug`. The
-// fluent helpers below (`text`, `marks`, `add`, …) run once per chunk of a document and would
-// bury every other line at the volume of a real post.
+// Logging covers the constructor and the entry points a caller drives directly — the setters
+// and `getDraft` — at `debug`, plus `setSection`'s rejection at `error`. The fluent helpers
+// (`text`, `marks`, `add`, …) stay silent: they run once per chunk of a document and would bury
+// every other line at the volume of a real post.
 export default class SubstackPost {
   constructor({title = null, subtitle = null, user_id, audience = null, write_comment_permissions = null, subscriber_set_id = null }) {
     this.draft_title = title;

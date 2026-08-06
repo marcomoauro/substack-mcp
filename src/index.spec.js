@@ -150,7 +150,12 @@ describe('entrypoint — stdio transport', () => {
 
 describe('entrypoint — logging', () => {
   test('reports the startup on stderr, leaving stdout to the protocol', async () => {
-    const {stdout, stderr} = await runEntrypoint({stdin: HANDSHAKE});
+    const {stdout, stderr, signal} = await runEntrypoint({stdin: HANDSHAKE});
+
+    // Every test reading runEntrypoint asserts this: the helper SIGTERMs a hung child after
+    // 10s, and by then the expected output is already captured, so a log assertion alone would
+    // pass on a server that logged correctly and then hung.
+    assert.equal(signal, null, 'the process should exit on its own, not be killed');
 
     const messages = logLines(stderr);
     const starting = messages.find((line) => line.msg === 'server.starting');
@@ -175,7 +180,7 @@ describe('entrypoint — logging', () => {
   // fails with ECONNREFUSED without a packet leaving the machine. MSW cannot help here, it
   // cannot instrument a child process.
   test('never writes the session token to the log, not even in a request header', async () => {
-    const {stderr} = await runEntrypoint({
+    const {stderr, signal} = await runEntrypoint({
       env: {
         ...TEST_ENV,
         SUBSTACK_PUBLICATION_URL: 'http://127.0.0.1:1',
@@ -183,6 +188,8 @@ describe('entrypoint — logging', () => {
       },
       stdin: HANDSHAKE + CALL_TOOL,
     });
+
+    assert.equal(signal, null, 'the process should exit on its own, not be killed');
 
     const request = logLines(stderr).find((line) => line.msg === 'substack.request');
 
@@ -192,7 +199,7 @@ describe('entrypoint — logging', () => {
   });
 
   test('logs the failure of a tool call, with the reason the client is given', async () => {
-    const {stderr} = await runEntrypoint({
+    const {stderr, signal} = await runEntrypoint({
       env: {
         ...TEST_ENV,
         SUBSTACK_PUBLICATION_URL: 'http://127.0.0.1:1',
@@ -200,6 +207,8 @@ describe('entrypoint — logging', () => {
       },
       stdin: HANDSHAKE + CALL_TOOL,
     });
+
+    assert.equal(signal, null, 'the process should exit on its own, not be killed');
 
     const lines = logLines(stderr);
     const start = lines.find((line) => line.msg === 'tool.call.start');
@@ -214,11 +223,12 @@ describe('entrypoint — logging', () => {
   });
 
   test('SUBSTACK_MCP_LOG_LEVEL=silent produces no output while the server still works', async () => {
-    const {stdout, stderr} = await runEntrypoint({
+    const {stdout, stderr, signal} = await runEntrypoint({
       env: {...TEST_ENV, SUBSTACK_MCP_LOG_LEVEL: 'silent'},
       stdin: HANDSHAKE,
     });
 
+    assert.equal(signal, null, 'the process should exit on its own, not be killed');
     assert.equal(stderr, '');
 
     const listTools = stdout

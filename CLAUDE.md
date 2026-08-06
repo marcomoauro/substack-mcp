@@ -61,9 +61,13 @@ made, the outcome. `src/logger.js` is the only writer — never `console.log`.
   muting the server.
 - **Secrets are redacted by key name**, recursively: `/token|cookie|password|secret|auth|session|^sid$/i`
   becomes `***`. So pass whole objects (`{headers}`, `{args}`, `{draft}`) and let the logger
-  handle it, rather than picking fields by hand at each call site. `sid` is anchored on purpose;
-  as a substring it would also blank out `considerations`. Post content is *not* truncated —
-  it is usually the thing being debugged.
+  handle it, rather than picking fields by hand at each call site. Post content is *not*
+  truncated — it is usually the thing being debugged.
+- **Two carve-outs keep the pattern from eating the diagnosis.** `sid` is anchored (`^sid$`)
+  because as a substring it also matches `considerations`. And a **boolean** under a secret key
+  survives: one bit cannot leak a credential, while redacting it turns the useful part of the
+  line into `***` — `has_auth_token: Boolean(auth_token)` logged as `"***"`, stating only that
+  the field exists, is a bug this repo has already shipped once.
 - The logger never throws: `Error` values are expanded to `{name, message, stack}` (raw, they
   serialize to `{}`), cycles become `[Circular]`, and an unserializable payload degrades to a
   `log_error` note.
@@ -74,9 +78,11 @@ made, the outcome. `src/logger.js` is the only writer — never `console.log`.
   useful one in the file when a model cannot get a call right.
 - Tool failures are logged **and rethrown**: `McpServer` still converts them into an `isError`
   result. Swallowing one would change the protocol behaviour.
-- `setTestEnv()` forces `SUBSTACK_MCP_LOG_LEVEL=silent`, so the in-process suites do not print
-  a line per tool call over the reporter. Assert on logs with `test/helpers/capture-logs.js`,
-  which sets the level and captures stderr for the duration of a call.
+- `setTestEnv()` forces `SUBSTACK_MCP_LOG_LEVEL=silent`. **Call it from every spec whose subject
+  logs**, including one that reads no env var of its own — `SubstackPost.spec.js` needs it purely
+  for this, and the two `src/api/substack` suites once printed 14 log lines over the reporter for
+  want of it. Assert on logs with `test/helpers/capture-logs.js`, which sets the level and
+  captures stderr for the duration of a call.
 
 ## Testing
 
