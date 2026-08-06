@@ -69,6 +69,7 @@ describe('SubstackApi — postDraft', () => {
       'substack.sid=test-session-token; connect.sid=test-session-token;'
     );
     assert.equal(request.headers.referer, 'https://test.substack.com/publish/post');
+    assert.match(request.headers['content-type'], /^application\/json/);
     assert.deepEqual(request.body, {draft_title: 'Title', draft_body: '{}'});
   });
 
@@ -82,16 +83,15 @@ describe('SubstackApi — postDraft', () => {
     assert.deepEqual(result, {id: 42, custom: true});
   });
 
-  // CHARACTERIZATION — axios throws on non-2xx responses before handleResponse gets to
-  // evaluate the status, so the SubstackAPIException branch is unreachable.
-  test('throws an AxiosError on 500, not a SubstackAPIException', async () => {
+  // fetch does not throw on non-2xx, so handleResponse is the one deciding: the
+  // SubstackAPIException branch is now the actual error path. Under axios this test
+  // asserted an AxiosError carrying `response.status` instead.
+  test('throws a SubstackAPIException on 500', async () => {
     msw.server.use(msw.draftsHandler(() => new HttpResponse('boom', {status: 500})));
 
     const error = await createApi().postDraft({}).catch((e) => e);
 
-    assert.equal(error.name, 'AxiosError');
-    assert.equal(error.response.status, 500);
-    assert.doesNotMatch(error.message, /SubstackAPIException/);
+    assert.match(error.message, /^SubstackAPIException: 500\b/);
   });
 
   test('throws on 401 and still records the request', async () => {
@@ -99,7 +99,15 @@ describe('SubstackApi — postDraft', () => {
 
     const error = await createApi().postDraft({}).catch((e) => e);
 
-    assert.equal(error.response.status, 401);
+    assert.match(error.message, /^SubstackAPIException: 401\b/);
     assert.equal(msw.requests.length, 1);
+  });
+
+  test('throws a SubstackRequestException when a 2xx body is not JSON', async () => {
+    msw.server.use(msw.draftsHandler(() => new HttpResponse('not json', {status: 200})));
+
+    const error = await createApi().postDraft({}).catch((e) => e);
+
+    assert.match(error.message, /^SubstackRequestException: Invalid Response: not json$/);
   });
 });

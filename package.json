@@ -37,9 +37,11 @@
     "email": "marcomoauro@hotmail.it"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.11.2",
-    "axios": "1.9.0",
     "zod": "3.24.4",
     "zod-to-json-schema": "3.24.5"
   },
