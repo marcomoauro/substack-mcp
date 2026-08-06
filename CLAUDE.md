@@ -20,6 +20,9 @@ used in the chat: do not mirror the conversation language into the codebase.
 | `npm run test:coverage` | Coverage report, spec files excluded |
 | `npm pack --dry-run` | Verify what ships to npm |
 
+`npm test` prints ~860 lines of TAP for a suite that runs in under a second. Pipe it through
+`grep -E '^# (pass|fail)'` for just the tally, and `grep -E '^not ok'` to find what broke.
+
 ## Layout
 
 - `src/index.js` — entrypoint only: env check, `createServer()`, stdio transport. Keep it thin.
@@ -27,6 +30,7 @@ used in the chat: do not mirror the conversation language into the codebase.
   import time**: no env reads, no transport connection. Tests depend on this.
 - `src/tools/<name>.js` — one file per MCP tool, exporting a zod schema and a handler.
 - `src/api/substack/` — `SubstackApi` (HTTP) and `SubstackPost` (ProseMirror document builder).
+- `src/logger.js` — the only place that writes a log line. No dependencies, no state.
 - `test/helpers/` — shared test helpers only; no tests live here.
 
 Adding a tool means adding a file under `src/tools/` and one entry to the `tools` registry in
@@ -36,6 +40,49 @@ from what was registered, so there is no second place to update and nothing that
 Do not add `setRequestHandler` calls for `tools/list` or `tools/call`: registering a tool
 already covers both, and the SDK guards the clash rather than letting it slide — it throws
 `A request handler for tools/call already exists, which would be overridden`.
+
+## Logging
+
+**Everything must be logged well enough to debug a session from the log alone**, because the
+caller is an LLM and the failure is usually in what it sent, not in this code. Every new tool,
+method or branch that a call can take gets a line: the arguments it received, the decision it
+made, the outcome. `src/logger.js` is the only writer — never `console.log`.
+
+- **stdout belongs to the JSON-RPC transport.** One byte written there corrupts the protocol
+  and the client disconnects, which is why the logger writes to stderr and why
+  `src/index.spec.js` asserts that stdout parses as JSON-RPC and stderr as log lines. MCP hosts
+  collect the server's stderr into their own log files; that is where these lines get read.
+- One JSON object per line: `{"ts","level","msg",…fields}`. `msg` is a dotted event name
+  (`tool.call.start`, `substack.response`), not a sentence — it is what you grep for.
+- Levels are `silent < error < warn < info < debug`, from `SUBSTACK_MCP_LOG_LEVEL`, default
+  `info`, read **at call time** (nothing in `src/` may read the environment at import time).
+  `info` is the story of a call — tool in, request out, response, result. `debug` adds the
+  payloads and the document-building steps. An unknown value falls back to `info` rather than
+  muting the server.
+- **Secrets are redacted by key name**, recursively: `/token|cookie|password|secret|auth|session|^sid$/i`
+  becomes `***`. So pass whole objects (`{headers}`, `{args}`, `{draft}`) and let the logger
+  handle it, rather than picking fields by hand at each call site. Post content is *not*
+  truncated — it is usually the thing being debugged.
+- **Two carve-outs keep the pattern from eating the diagnosis.** `sid` is anchored (`^sid$`)
+  because as a substring it also matches `considerations`. And a **boolean** under a secret key
+  survives: one bit cannot leak a credential, while redacting it turns the useful part of the
+  line into `***` — `has_auth_token: Boolean(auth_token)` logged as `"***"`, stating only that
+  the field exists, is a bug this repo has already shipped once.
+- The logger never throws: `Error` values are expanded to `{name, message, stack}` (raw, they
+  serialize to `{}`), cycles become `[Circular]`, and an unserializable payload degrades to a
+  `log_error` note.
+- **A rejected tool call cannot be logged from inside the handler.** `McpServer` validates
+  arguments itself and answers `Input validation error` before the handler runs, so
+  `logOutgoingMessages(transport)` wraps `transport.send` to catch it — `warn` for anything
+  carrying `error` or `isError`, `debug` for the rest of the traffic. That line is the most
+  useful one in the file when a model cannot get a call right.
+- Tool failures are logged **and rethrown**: `McpServer` still converts them into an `isError`
+  result. Swallowing one would change the protocol behaviour.
+- `setTestEnv()` forces `SUBSTACK_MCP_LOG_LEVEL=silent`. **Call it from every spec whose subject
+  logs**, including one that reads no env var of its own — `SubstackPost.spec.js` needs it purely
+  for this, and the two `src/api/substack` suites once printed 14 log lines over the reporter for
+  want of it. Assert on logs with `test/helpers/capture-logs.js`, which sets the level and
+  captures stderr for the duration of a call.
 
 ## Testing
 
@@ -48,15 +95,26 @@ unmocked request fails the test instead of reaching the network. Never disable t
 overrides with `msw.draftsHandler(...)` rather than a bare `http.post`, otherwise the request
 is not recorded in `msw.requests`.
 
+The exception is `src/index.spec.js`, which spawns the entrypoint as a child process: MSW runs
+in the test process and cannot intercept anything there. To exercise a failing request, point
+`SUBSTACK_PUBLICATION_URL` at `http://127.0.0.1:1` — the request gets logged, then fails with
+ECONNREFUSED without a packet leaving the machine.
+
 Tests that pin *current* behaviour rather than desired behaviour carry a `CHARACTERIZATION`
 comment explaining why. If one fails, suspect the test before the source — that is the point
 of it. Update the comment in the same commit that changes the behaviour.
 
 **A new test that passes on the first run has proven nothing.** Break the source on purpose —
 revert the fix, strip the field, loosen the schema — confirm it fails, restore. This caught
-two tests that were passing vacuously: `additionalProperties` was dropped from the published
-schema with nobody noticing, and the schema test survived having every `description` stripped.
-The whole suite runs in well under a second, so a mutation costs nothing.
+three tests that were passing vacuously: `additionalProperties` was dropped from the published
+schema with nobody noticing, the schema test survived having every `description` stripped, and
+"never writes the session token to the log" passed with redaction disabled, because the
+handshake it drove never logs a request header in the first place — it now drives a real tool
+call against a closed local port. Renaming the log line under test is the cheapest mutation for
+a logging assertion. **Check the mutation actually landed** before trusting a green run: a
+`sed`/`perl` regex that fails to match leaves the file untouched and reads exactly like a test
+that asserts nothing. Grep the file for a marker first. The whole suite runs in well under a
+second, so a mutation costs nothing.
 
 ## Style
 
@@ -111,9 +169,10 @@ literals (`{a: 1}`, not `{ a: 1 }`).
   SDK, and `registerTool` throws `inputSchema must be a Zod schema or raw shape` for anything
   else — the SDK's validation *is* zod. npm auto-installs it even if it leaves `package.json`,
   so removing the direct dependency buys nothing and unpins the version.
-- **`ZodError` details live on `.issues`, not `.errors`** (zod 4 renamed it). Nothing in `src/`
-  reads them today — the SDK formats the message — but `.errors` silently yields `undefined`
-  rather than failing, so it is worth knowing before writing a handler that inspects them.
+- **`ZodError` details live on `.issues`, not `.errors`** (zod 4 renamed it). The only reader in
+  `src/` is the `create_draft_post.args.invalid` log — the SDK formats the message it sends to
+  the client — and `.errors` silently yields `undefined` rather than failing, so a handler that
+  inspects them logs nothing and reports no error.
 
 ## Verifying the server actually works
 

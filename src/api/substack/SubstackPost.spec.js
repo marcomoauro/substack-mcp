@@ -1,6 +1,20 @@
-import {test, describe} from 'node:test';
+import {test, describe, before, after} from 'node:test';
 import assert from 'node:assert/strict';
 import SubstackPost from './SubstackPost.js';
+import {setTestEnv} from '../../../test/helpers/env.js';
+import {captureLogs} from '../../../test/helpers/capture-logs.js';
+
+let restoreEnv;
+
+// setTestEnv is here for its SUBSTACK_MCP_LOG_LEVEL=silent: this file reads no env var, but the
+// constructor and every setter log, and the lines would otherwise land in the reporter output.
+before(() => {
+  restoreEnv = setTestEnv();
+});
+
+after(() => {
+  restoreEnv();
+});
 
 describe('SubstackPost — constructor', () => {
   test('applies the defaults and coerces user_id to an integer', () => {
@@ -99,6 +113,65 @@ describe('SubstackPost — getDraft', () => {
     post.setBody('testo semplice');
 
     assert.equal(post.getDraft().draft_body, '"testo semplice"');
+  });
+});
+
+describe('SubstackPost — logging', () => {
+  function find(lines, msg) {
+    const line = lines.find((entry) => entry.msg === msg);
+    assert.ok(line, `expected a ${msg} log line, got: ${lines.map((l) => l.msg).join(', ')}`);
+    return line;
+  }
+
+  test('the constructor records the fields it derived', async () => {
+    const lines = await captureLogs(() => new SubstackPost({user_id: '42', title: 'T'}));
+
+    const created = find(lines, 'draft.created');
+    assert.equal(created.draft_title, 'T');
+    assert.deepEqual(created.draft_bylines, [{id: 42, is_guest: false}]);
+    assert.equal(created.audience, 'everyone');
+  });
+
+  test('each setter records what it was given', async () => {
+    const post = new SubstackPost({user_id: '1'});
+
+    const lines = await captureLogs(() => {
+      post.setTitle('New title');
+      post.setSubtitle('New subtitle');
+      post.setBody({type: 'doc', content: [{type: 'paragraph'}]});
+    });
+
+    assert.equal(find(lines, 'draft.setTitle').title, 'New title');
+    assert.equal(find(lines, 'draft.setSubtitle').subtitle, 'New subtitle');
+    assert.deepEqual(find(lines, 'draft.setBody').body.content, [{type: 'paragraph'}]);
+  });
+
+  test('getDraft records the payload that is about to be sent', async () => {
+    const post = new SubstackPost({user_id: '1', title: 'T'});
+
+    const lines = await captureLogs(() => post.getDraft());
+
+    const {draft} = find(lines, 'draft.getDraft');
+    assert.equal(draft.draft_title, 'T');
+    assert.equal(draft.draft_body, '{"type":"doc","content":[]}');
+  });
+
+  test('a section is recorded, and an unknown one names the available sections', async () => {
+    const post = new SubstackPost({user_id: '1'});
+    const sections = [{name: 'News', id: 7}];
+
+    const lines = await captureLogs(() => {
+      post.setSection('News', sections);
+      assert.throws(() => post.setSection('Missing', sections));
+    });
+
+    assert.equal(find(lines, 'draft.setSection').name, 'News');
+
+    // The thrown message names only what was asked for; the log is where a caller can see what
+    // it should have asked for instead.
+    const unknown = find(lines, 'draft.setSection.unknown');
+    assert.equal(unknown.name, 'Missing');
+    assert.deepEqual(unknown.available, ['News']);
   });
 });
 

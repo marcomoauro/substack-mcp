@@ -1,3 +1,9 @@
+import {logger} from "../../logger.js";
+
+// Logging covers the constructor and the entry points a caller drives directly — the setters
+// and `getDraft` — at `debug`, plus `setSection`'s rejection at `error`. The fluent helpers
+// (`text`, `marks`, `add`, …) stay silent: they run once per chunk of a document and would bury
+// every other line at the volume of a real post.
 export default class SubstackPost {
   constructor({title = null, subtitle = null, user_id, audience = null, write_comment_permissions = null, subscriber_set_id = null }) {
     this.draft_title = title;
@@ -19,24 +25,38 @@ export default class SubstackPost {
       this.type = 'adhoc_email'
     }
 
+    logger.debug('draft.created', {
+      draft_title: this.draft_title,
+      draft_subtitle: this.draft_subtitle,
+      draft_bylines: this.draft_bylines,
+      audience: this.audience,
+      write_comment_permissions: this.write_comment_permissions,
+      type: this.type ?? null,
+    });
   }
 
   setBody(body) {
+    logger.debug('draft.setBody', {body});
     this.draft_body = body;
   }
 
   setTitle(title) {
+    logger.debug('draft.setTitle', {title});
     this.draft_title = title;
   }
 
   setSubtitle(subtitle) {
+    logger.debug('draft.setSubtitle', {subtitle});
     this.draft_subtitle = subtitle;
   }
 
   setSection(name, sections) {
+    logger.debug('draft.setSection', {name, sections});
+
     const section = sections.find(s => s.name === name);
 
     if (!section) {
+      logger.error('draft.setSection.unknown', {name, available: sections.map(s => s.name)});
       throw new Error(`Section ${name} does not exist`);
     }
 
@@ -322,7 +342,10 @@ export default class SubstackPost {
 
   getDraft() {
     const {draft_body, ...rest} = this;
-    return {...rest, draft_body: JSON.stringify(draft_body)};
+    const draft = {...rest, draft_body: JSON.stringify(draft_body)};
+
+    logger.debug('draft.getDraft', {draft});
+    return draft;
   }
 
   subscribeWithCaption(message = null) {

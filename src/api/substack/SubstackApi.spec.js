@@ -3,13 +3,23 @@ import assert from 'node:assert/strict';
 import {HttpResponse} from 'msw';
 import SubstackApi from './SubstackApi.js';
 import {createMswServer, DRAFTS_URL, DRAFT_RESPONSE} from '../../../test/helpers/msw-server.js';
-import {TEST_ENV} from '../../../test/helpers/env.js';
+import {TEST_ENV, setTestEnv} from '../../../test/helpers/env.js';
+import {captureLogs} from '../../../test/helpers/capture-logs.js';
 
 const msw = createMswServer();
+let restoreEnv;
 
-before(() => msw.start());
+// setTestEnv is here for its SUBSTACK_MCP_LOG_LEVEL=silent: this file reads no env var, but
+// every method it exercises logs, and the lines would otherwise land in the reporter output.
+before(() => {
+  restoreEnv = setTestEnv();
+  msw.start();
+});
 afterEach(() => msw.reset());
-after(() => msw.stop());
+after(() => {
+  msw.stop();
+  restoreEnv();
+});
 
 function createApi() {
   return new SubstackApi({
@@ -111,3 +121,42 @@ describe('SubstackApi — postDraft', () => {
     assert.match(error.message, /^SubstackRequestException: Invalid Response: not json$/);
   });
 });
+
+describe('SubstackApi — logging', () => {
+  function find(lines, msg) {
+    const line = lines.find((entry) => entry.msg === msg);
+    assert.ok(line, `expected a ${msg} log line, got: ${lines.map((l) => l.msg).join(', ')}`);
+    return line;
+  }
+
+  // `has_auth_token` matches the redaction pattern twice over (`auth`, `token`) and used to be
+  // logged as `***`, which said only that the field existed. Booleans are now exempt.
+  test('the constructor reports whether a token arrived, without logging it', async () => {
+    const lines = await captureLogs(() => createApi());
+
+    const created = find(lines, 'substack_api.created');
+    assert.equal(created.has_auth_token, true);
+    assert.equal(created.publication_url, 'https://test.substack.com/api/v1');
+    assert.doesNotMatch(JSON.stringify(created), new RegExp(TEST_ENV.SUBSTACK_SESSION_TOKEN));
+  });
+
+  test('a successful response is logged with its parsed body', async () => {
+    const lines = await captureLogs(() => createApi().postDraft({draft_title: 'Title'}));
+
+    const body = find(lines, 'substack.response.body');
+    assert.equal(body.status, 200);
+    assert.deepEqual(body.body, DRAFT_RESPONSE);
+  });
+
+  test('a 2xx body that is not JSON is logged before the exception', async () => {
+    msw.server.use(msw.draftsHandler(() => new HttpResponse('not json', {status: 200})));
+
+    const lines = await captureLogs(() => createApi().postDraft({}).catch(() => {}));
+
+    const invalid = find(lines, 'substack.response.invalid');
+    assert.equal(invalid.status, 200);
+    assert.equal(invalid.body, 'not json');
+  });
+});
+// `substack.request.failed` is covered in src/index.spec.js instead: a fetch to a closed port
+// here would be flagged by MSW as an unhandled request, since it intercepts the whole process.

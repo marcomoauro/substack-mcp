@@ -1,6 +1,7 @@
 import {z} from "zod";
 import SubstackApi from "../api/substack/SubstackApi.js";
 import SubstackPost from "../api/substack/SubstackPost.js";
+import {logger} from "../logger.js";
 
 
 // strictObject, not object: an unknown key must be reported rather than stripped. The
@@ -29,13 +30,18 @@ const parseBody = (body) => {
   try {
     const doc = JSON.parse(body);
     if (doc && doc.type === 'doc') {
+      logger.debug('draft.body.parsed', {format: 'prosemirror', nodes: doc.content?.length ?? 0});
       return doc;
     }
+
+    // Valid JSON that is not a document: it goes through as text, and a model that believed
+    // it was sending a document would have no other way to find out.
+    logger.debug('draft.body.json_is_not_a_document', {parsed: doc});
   } catch (error) {
     // not JSON, treat as plain text
   }
 
-  return {
+  const doc = {
     type: 'doc',
     content: body
       .split(/\n+/)
@@ -45,13 +51,27 @@ const parseBody = (body) => {
         content: [{type: 'text', text: paragraph}],
       })),
   };
+
+  logger.debug('draft.body.parsed', {format: 'text', nodes: doc.content.length, chars: body.length});
+  return doc;
 };
 
 export const createDraftPostHandler = async (args) => {
+  logger.debug('create_draft_post.start', {args});
+
   // McpServer already validated against this schema before dispatching, so over MCP this
   // parse never rejects. It is kept so the handler stays safe when called directly, which
   // is how its own tests exercise it.
-  const validatedArgs = createDraftPostSchema.parse(args);
+  let validatedArgs;
+
+  try {
+    validatedArgs = createDraftPostSchema.parse(args);
+  } catch (error) {
+    // `issues`, not `errors`: zod 4 renamed it, and reading the old name yields undefined
+    // instead of failing. Reached only on a direct call — over MCP the SDK rejects first.
+    logger.error('create_draft_post.args.invalid', {issues: error.issues ?? error.message});
+    throw error;
+  }
 
   const {title, subtitle, body} = validatedArgs;
 
@@ -66,7 +86,15 @@ export const createDraftPostHandler = async (args) => {
   substack_post.setSubtitle(subtitle)
   substack_post.setBody(parseBody(body))
 
-  await substack_api.postDraft(substack_post.getDraft())
+  const draft = substack_post.getDraft();
+  logger.debug('create_draft_post.draft.built', {draft});
+
+  const response = await substack_api.postDraft(draft)
+
+  logger.info('create_draft_post.created', {
+    draft_id: response?.id ?? null,
+    is_published: response?.is_published ?? null,
+  });
 
   return 'OK'
 }

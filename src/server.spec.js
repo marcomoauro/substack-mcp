@@ -4,6 +4,7 @@ import {HttpResponse} from 'msw';
 import {connectMcpClient} from '../test/helpers/mcp-harness.js';
 import {createMswServer, DRAFTS_URL} from '../test/helpers/msw-server.js';
 import {setTestEnv} from '../test/helpers/env.js';
+import {captureLogs} from '../test/helpers/capture-logs.js';
 
 const msw = createMswServer();
 let restoreEnv;
@@ -217,6 +218,55 @@ describe('MCP server — call_tool', () => {
       } finally {
         await close();
       }
+    });
+  });
+
+  describe('what the log says about a call', () => {
+    function find(lines, msg) {
+      const line = lines.find((entry) => entry.msg === msg);
+      assert.ok(line, `expected a ${msg} log line, got: ${lines.map((l) => l.msg).join(', ')}`);
+      return line;
+    }
+
+    async function callAndCaptureLogs(args) {
+      const {client, close} = await connectMcpClient();
+
+      try {
+        return await captureLogs(() => client.callTool({name: 'create_draft_post', arguments: args}));
+      } finally {
+        await close();
+      }
+    }
+
+    test('a successful call is bracketed by start and success, with its duration', async () => {
+      const lines = await callAndCaptureLogs(VALID_ARGS);
+
+      const start = find(lines, 'tool.call.start');
+      assert.equal(start.tool, 'create_draft_post');
+      assert.deepEqual(start.args, VALID_ARGS);
+
+      const success = find(lines, 'tool.call.success');
+      assert.equal(success.tool, 'create_draft_post');
+      assert.equal(success.result, 'OK');
+      assert.equal(typeof success.duration_ms, 'number');
+    });
+
+    test('a failing call logs the error and no success line', async () => {
+      msw.server.use(msw.draftsHandler(() => new HttpResponse('boom', {status: 500})));
+
+      const lines = await callAndCaptureLogs(VALID_ARGS);
+
+      assert.match(find(lines, 'tool.call.error').error.message, /SubstackAPIException: 500/);
+      assert.equal(lines.find((entry) => entry.msg === 'tool.call.success'), undefined);
+    });
+
+    // McpServer answers a malformed call itself, so nothing inside the tool runs or logs. This
+    // is the gap logOutgoingMessages() closes at the transport, which this harness does not
+    // wrap — the rejection line itself is asserted in src/logger.spec.js.
+    test('a call rejected before the handler runs logs nothing from the tool', async () => {
+      const lines = await callAndCaptureLogs({title: 'title only'});
+
+      assert.deepEqual(lines.map((entry) => entry.msg), []);
     });
   });
 
