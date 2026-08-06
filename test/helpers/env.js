@@ -5,8 +5,8 @@ export const TEST_ENV = {
 };
 
 /**
- * Imposta le env var di test e restituisce una funzione che ripristina i valori precedenti,
- * così un file di test non altera l'ambiente visto dagli altri.
+ * Sets the test env vars and returns a function restoring the previous values, so that one
+ * test file does not alter the environment the others see.
  */
 export function setTestEnv(overrides = {}) {
   const values = {...TEST_ENV, ...overrides};

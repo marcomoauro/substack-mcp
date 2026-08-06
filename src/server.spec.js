@@ -20,10 +20,10 @@ after(() => {
   restoreEnv();
 });
 
-const VALID_ARGS = {title: 'Titolo', subtitle: 'Sottotitolo', body: 'Corpo'};
+const VALID_ARGS = {title: 'Title', subtitle: 'Subtitle', body: 'Body'};
 
 describe('MCP server — list_tools', () => {
-  test('espone create_draft_post con la sua descrizione', async () => {
+  test('exposes create_draft_post with its description', async () => {
     const {client, close} = await connectMcpClient();
 
     try {
@@ -37,7 +37,7 @@ describe('MCP server — list_tools', () => {
     }
   });
 
-  test('pubblica un inputSchema con i tre campi obbligatori', async () => {
+  test('publishes an inputSchema with the three required fields', async () => {
     const {client, close} = await connectMcpClient();
 
     try {
@@ -55,7 +55,7 @@ describe('MCP server — list_tools', () => {
 });
 
 describe('MCP server — call_tool', () => {
-  test('esegue il tool e restituisce il risultato serializzato', async () => {
+  test('runs the tool and returns the serialized result', async () => {
     const {client, close} = await connectMcpClient();
 
     try {
@@ -67,7 +67,7 @@ describe('MCP server — call_tool', () => {
     }
   });
 
-  test('la chiamata raggiunge l\'API Substack', async () => {
+  test('the call reaches the Substack API', async () => {
     const {client, close} = await connectMcpClient();
 
     try {
@@ -75,13 +75,13 @@ describe('MCP server — call_tool', () => {
 
       assert.equal(msw.requests.length, 1);
       assert.equal(msw.requests[0].url, DRAFTS_URL);
-      assert.equal(msw.requests[0].body.draft_title, 'Titolo');
+      assert.equal(msw.requests[0].body.draft_title, 'Title');
     } finally {
       await close();
     }
   });
 
-  test('un tool sconosciuto produce un errore', async () => {
+  test('an unknown tool produces an error', async () => {
     const {client, close} = await connectMcpClient();
 
     try {
@@ -96,12 +96,12 @@ describe('MCP server — call_tool', () => {
     }
   });
 
-  test('argomenti invalidi producono un errore Invalid input con i dettagli Zod', async () => {
+  test('invalid arguments produce an Invalid input error carrying the Zod details', async () => {
     const {client, close} = await connectMcpClient();
 
     try {
       const error = await client
-        .callTool({name: 'create_draft_post', arguments: {title: 'solo il titolo'}})
+        .callTool({name: 'create_draft_post', arguments: {title: 'title only'}})
         .catch((e) => e);
 
       assert.match(error.message, /Invalid input:/);
@@ -112,7 +112,7 @@ describe('MCP server — call_tool', () => {
     }
   });
 
-  test('un errore dell\'API Substack si propaga al client', async () => {
+  test('a Substack API error propagates to the client', async () => {
     msw.server.use(msw.draftsHandler(() => new HttpResponse('boom', {status: 500})));
 
     const {client, close} = await connectMcpClient();

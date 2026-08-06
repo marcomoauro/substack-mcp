@@ -3,8 +3,8 @@ import {InMemoryTransport} from '@modelcontextprotocol/sdk/inMemory.js';
 import {createServer} from '../../src/server.js';
 
 /**
- * Collega un Client MCP reale al server di produzione tramite una coppia di transport
- * in memoria. Restituisce il client e una funzione di chiusura.
+ * Connects a real MCP Client to the production server through a linked pair of in-memory
+ * transports. Returns the client and a close function.
  */
 export async function connectMcpClient() {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

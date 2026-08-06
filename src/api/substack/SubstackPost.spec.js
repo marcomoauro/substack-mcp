@@ -2,8 +2,8 @@ import {test, describe} from 'node:test';
 import assert from 'node:assert/strict';
 import SubstackPost from './SubstackPost.js';
 
-describe('SubstackPost — costruttore', () => {
-  test('applica i default e converte user_id a intero', () => {
+describe('SubstackPost — constructor', () => {
+  test('applies the defaults and coerces user_id to an integer', () => {
     const post = new SubstackPost({user_id: '12345'});
 
     assert.equal(post.draft_title, null);
@@ -15,21 +15,21 @@ describe('SubstackPost — costruttore', () => {
     assert.equal(post.section_chosen, true);
   });
 
-  test('accetta titolo e sottotitolo dal costruttore', () => {
+  test('accepts title and subtitle from the constructor', () => {
     const post = new SubstackPost({user_id: '1', title: 'T', subtitle: 'S'});
 
     assert.equal(post.draft_title, 'T');
     assert.equal(post.draft_subtitle, 'S');
   });
 
-  test('write_comment_permissions segue audience quando non specificato', () => {
+  test('write_comment_permissions follows audience when not given', () => {
     const post = new SubstackPost({user_id: '1', audience: 'only_paid'});
 
     assert.equal(post.audience, 'only_paid');
     assert.equal(post.write_comment_permissions, 'only_paid');
   });
 
-  test('write_comment_permissions esplicito vince su audience', () => {
+  test('an explicit write_comment_permissions wins over audience', () => {
     const post = new SubstackPost({
       user_id: '1',
       audience: 'only_paid',
@@ -39,14 +39,14 @@ describe('SubstackPost — costruttore', () => {
     assert.equal(post.write_comment_permissions, 'everyone');
   });
 
-  test('senza subscriber_set_id non imposta subscriber_set_id né type', () => {
+  test('without subscriber_set_id it sets neither subscriber_set_id nor type', () => {
     const post = new SubstackPost({user_id: '1'});
 
     assert.equal(post.subscriber_set_id, undefined);
     assert.equal(post.type, undefined);
   });
 
-  test('con subscriber_set_id imposta anche type adhoc_email', () => {
+  test('with subscriber_set_id it also sets type to adhoc_email', () => {
     const post = new SubstackPost({user_id: '1', subscriber_set_id: 77});
 
     assert.equal(post.subscriber_set_id, 77);
@@ -54,22 +54,22 @@ describe('SubstackPost — costruttore', () => {
   });
 });
 
-describe('SubstackPost — setter', () => {
-  test('setTitle, setSubtitle e setBody aggiornano lo stato', () => {
+describe('SubstackPost — setters', () => {
+  test('setTitle, setSubtitle and setBody update the state', () => {
     const post = new SubstackPost({user_id: '1'});
 
-    post.setTitle('Nuovo titolo');
-    post.setSubtitle('Nuovo sottotitolo');
+    post.setTitle('New title');
+    post.setSubtitle('New subtitle');
     post.setBody({type: 'doc', content: [{type: 'paragraph'}]});
 
-    assert.equal(post.draft_title, 'Nuovo titolo');
-    assert.equal(post.draft_subtitle, 'Nuovo sottotitolo');
+    assert.equal(post.draft_title, 'New title');
+    assert.equal(post.draft_subtitle, 'New subtitle');
     assert.deepEqual(post.draft_body, {type: 'doc', content: [{type: 'paragraph'}]});
   });
 });
 
 describe('SubstackPost — getDraft', () => {
-  test('serializza draft_body in stringa e conserva le altre proprietà', () => {
+  test('serializes draft_body to a string and keeps the other properties', () => {
     const post = new SubstackPost({user_id: '42', title: 'T', subtitle: 'S'});
 
     const draft = post.getDraft();
@@ -82,7 +82,7 @@ describe('SubstackPost — getDraft', () => {
     assert.equal(draft.draft_body, '{"type":"doc","content":[]}');
   });
 
-  test('non muta l\'istanza', () => {
+  test('does not mutate the instance', () => {
     const post = new SubstackPost({user_id: '1'});
 
     post.getDraft();
@@ -90,10 +90,10 @@ describe('SubstackPost — getDraft', () => {
     assert.deepEqual(post.draft_body, {type: 'doc', content: []});
   });
 
-  // CARATTERIZZAZIONE — comportamento corrente, probabile anomalia.
-  // createDraftPostHandler passa una stringa a setBody, quindi getDraft applica
-  // JSON.stringify a una stringa e draft_body finisce doppiamente serializzato.
-  test('setBody con una stringa produce un draft_body doppiamente serializzato', () => {
+  // CHARACTERIZATION — current behaviour of the builder itself. Handing setBody a string
+  // makes getDraft apply JSON.stringify to a string, double-serializing draft_body.
+  // createDraftPostHandler no longer does this (see #4), but the class still allows it.
+  test('setBody with a string produces a double-serialized draft_body', () => {
     const post = new SubstackPost({user_id: '1'});
 
     post.setBody('testo semplice');
@@ -102,18 +102,18 @@ describe('SubstackPost — getDraft', () => {
   });
 });
 
-describe('SubstackPost — blocchi di contenuto', () => {
-  test('paragraph con testo semplice', () => {
+describe('SubstackPost — content blocks', () => {
+  test('paragraph with plain text', () => {
     const post = new SubstackPost({user_id: '1'});
 
-    post.paragraph('Ciao');
+    post.paragraph('Hello');
 
     assert.deepEqual(post.draft_body.content, [
-      {type: 'paragraph', content: [{type: 'text', text: 'Ciao'}]},
+      {type: 'paragraph', content: [{type: 'text', text: 'Hello'}]},
     ]);
   });
 
-  test('paragraph senza argomenti produce un paragrafo vuoto', () => {
+  test('paragraph with no arguments produces an empty paragraph', () => {
     const post = new SubstackPost({user_id: '1'});
 
     post.paragraph();
@@ -121,25 +121,25 @@ describe('SubstackPost — blocchi di contenuto', () => {
     assert.deepEqual(post.draft_body.content, [{type: 'paragraph'}]);
   });
 
-  test('heading imposta attrs.level', () => {
+  test('heading sets attrs.level', () => {
     const post = new SubstackPost({user_id: '1'});
 
-    post.heading({content: 'Titolo', level: 2});
+    post.heading({content: 'Heading', level: 2});
 
     assert.deepEqual(post.draft_body.content, [
-      {type: 'heading', content: [{type: 'text', text: 'Titolo'}], attrs: {level: 2}},
+      {type: 'heading', content: [{type: 'text', text: 'Heading'}], attrs: {level: 2}},
     ]);
   });
 
-  test('heading usa level 1 come default', () => {
+  test('heading defaults to level 1', () => {
     const post = new SubstackPost({user_id: '1'});
 
-    post.heading({content: 'Titolo'});
+    post.heading({content: 'Heading'});
 
     assert.equal(post.draft_body.content[0].attrs.level, 1);
   });
 
-  test('horizontalRule e paywall', () => {
+  test('horizontalRule and paywall', () => {
     const post = new SubstackPost({user_id: '1'});
 
     post.horizontalRule();
@@ -151,81 +151,81 @@ describe('SubstackPost — blocchi di contenuto', () => {
     ]);
   });
 
-  test('bulletList costruisce list_item annidati', () => {
+  test('bulletList builds nested list_item nodes', () => {
     const post = new SubstackPost({user_id: '1'});
 
-    post.bulletList(['uno', 'due']);
+    post.bulletList(['one', 'two']);
 
     assert.deepEqual(post.draft_body.content, [
       {
         type: 'bullet_list',
         content: [
-          {type: 'list_item', content: [{type: 'paragraph', content: [{type: 'text', text: 'uno'}]}]},
-          {type: 'list_item', content: [{type: 'paragraph', content: [{type: 'text', text: 'due'}]}]},
+          {type: 'list_item', content: [{type: 'paragraph', content: [{type: 'text', text: 'one'}]}]},
+          {type: 'list_item', content: [{type: 'paragraph', content: [{type: 'text', text: 'two'}]}]},
         ],
       },
     ]);
   });
 
-  test('orderedList aggiunge attrs start/order', () => {
+  test('orderedList adds the start/order attrs', () => {
     const post = new SubstackPost({user_id: '1'});
 
-    post.orderedList(['uno']);
+    post.orderedList(['one']);
 
     assert.deepEqual(post.draft_body.content, [
       {
         type: 'ordered_list',
         attrs: {start: 1, order: 1},
         content: [
-          {type: 'list_item', content: [{type: 'paragraph', content: [{type: 'text', text: 'uno'}]}]},
+          {type: 'list_item', content: [{type: 'paragraph', content: [{type: 'text', text: 'one'}]}]},
         ],
       },
     ]);
   });
 
-  test('bold e italic producono paragrafi con i mark corrispondenti', () => {
+  test('bold and italic produce paragraphs with the matching marks', () => {
     const post = new SubstackPost({user_id: '1'});
 
-    post.bold('grassetto');
-    post.italic('corsivo');
+    post.bold('bold text');
+    post.italic('italic text');
 
     assert.deepEqual(post.draft_body.content, [
-      {type: 'paragraph', content: [{type: 'text', marks: [{type: 'strong'}], text: 'grassetto'}]},
-      {type: 'paragraph', content: [{type: 'text', marks: [{type: 'em'}], text: 'corsivo'}]},
+      {type: 'paragraph', content: [{type: 'text', marks: [{type: 'strong'}], text: 'bold text'}]},
+      {type: 'paragraph', content: [{type: 'text', marks: [{type: 'em'}], text: 'italic text'}]},
     ]);
   });
 
-  test('shareButton, commentButton e customButton', () => {
+  test('shareButton, commentButton and customButton', () => {
     const post = new SubstackPost({user_id: '1'});
 
     post.shareButton();
     post.commentButton();
-    post.customButton({url: 'https://example.com', text: 'Vai'});
+    post.customButton({url: 'https://example.com', text: 'Go'});
 
     assert.deepEqual(post.draft_body.content, [
       {type: 'button', attrs: {url: '%%share_url%%', text: 'Share', action: null, class: 'button-wrapper'}},
       {type: 'button', attrs: {url: '%%half_magic_comments_url%%', text: 'Leave a comment', action: null, class: 'button-wrapper'}},
-      {type: 'button', attrs: {url: 'https://example.com', text: 'Vai', action: null, class: 'button-wrapper'}},
+      {type: 'button', attrs: {url: 'https://example.com', text: 'Go', action: null, class: 'button-wrapper'}},
     ]);
   });
 
-  test('removeLastParagraph rimuove l\'ultimo blocco', () => {
+  test('removeLastParagraph drops the last block', () => {
     const post = new SubstackPost({user_id: '1'});
 
-    post.paragraph('primo');
-    post.paragraph('secondo');
+    post.paragraph('first');
+    post.paragraph('second');
     post.removeLastParagraph();
 
     assert.equal(post.draft_body.content.length, 1);
-    assert.deepEqual(post.draft_body.content[0].content, [{type: 'text', text: 'primo'}]);
+    assert.deepEqual(post.draft_body.content[0].content, [{type: 'text', text: 'first'}]);
   });
 
-  // CARATTERIZZAZIONE — add() passa l'intero item a captionedImage(), quindi item.type
-  // (il tipo del nodo, 'captionedImage') sovrascrive il default `type = null`
-  // dell'attributo omonimo di image2. Il default è irraggiungibile per questa via, che è
-  // anche l'unica praticabile: chiamare captionedImage() direttamente lancia, perché legge
-  // l'ultimo nodo di draft_body.content, che a quel punto non esiste.
-  test('captionedImage annida un nodo image2 e gli attrs.type ereditano il tipo del nodo', () => {
+  // CHARACTERIZATION — add() passes the whole item to captionedImage(), so item.type (the
+  // node type, 'captionedImage') overrides the `type = null` default of image2's attribute
+  // of the same name. The default is unreachable through this path, which is also the only
+  // usable one: calling captionedImage() directly throws, because it reads the last node of
+  // draft_body.content, which does not exist yet.
+  test('captionedImage nests an image2 node whose attrs.type inherits the node type', () => {
     const post = new SubstackPost({user_id: '1'});
 
     post.add({type: 'captionedImage', src: 'https://img.example/a.png'});
@@ -260,13 +260,13 @@ describe('SubstackPost — blocchi di contenuto', () => {
 
 describe('SubstackPost — youtubeVideo', () => {
   const cases = [
-    ['URL youtube.com con parametro v', 'https://www.youtube.com/watch?v=0chZFIZLR_0'],
-    ['URL breve youtu.be', 'https://youtu.be/0chZFIZLR_0?si=-Gp9e_RKG3g1SdVG'],
-    ['ID nudo', '0chZFIZLR_0'],
+    ['a youtube.com URL with a v parameter', 'https://www.youtube.com/watch?v=0chZFIZLR_0'],
+    ['a short youtu.be URL', 'https://youtu.be/0chZFIZLR_0?si=-Gp9e_RKG3g1SdVG'],
+    ['a bare id', '0chZFIZLR_0'],
   ];
 
   for (const [label, input] of cases) {
-    test(`estrae il video id da: ${label}`, () => {
+    test(`extracts the video id from ${label}`, () => {
       const post = new SubstackPost({user_id: '1'});
 
       post.youtubeVideo(input);
@@ -278,32 +278,32 @@ describe('SubstackPost — youtubeVideo', () => {
   }
 });
 
-describe('SubstackPost — testo con mark', () => {
-  test('addComplexText con un array applica i mark per chunk', () => {
+describe('SubstackPost — marked text', () => {
+  test('addComplexText with an array applies marks per chunk', () => {
     const post = new SubstackPost({user_id: '1'});
 
     post.paragraph([
-      {content: 'in grassetto', marks: [{type: 'strong'}]},
-      {content: ' e normale'},
+      {content: 'in bold', marks: [{type: 'strong'}]},
+      {content: ' and plain'},
     ]);
 
     assert.deepEqual(post.draft_body.content[0].content, [
-      {type: 'text', text: 'in grassetto', marks: [{type: 'strong'}]},
-      {type: 'text', text: ' e normale', marks: []},
+      {type: 'text', text: 'in bold', marks: [{type: 'strong'}]},
+      {type: 'text', text: ' and plain', marks: []},
     ]);
   });
 
-  test('un mark link produce attrs.href', () => {
+  test('a link mark produces attrs.href', () => {
     const post = new SubstackPost({user_id: '1'});
 
     post.paragraph([
-      {content: 'clicca qui', marks: [{type: 'link', href: 'https://example.com'}]},
+      {content: 'click here', marks: [{type: 'link', href: 'https://example.com'}]},
     ]);
 
     assert.deepEqual(post.draft_body.content[0].content, [
       {
         type: 'text',
-        text: 'clicca qui',
+        text: 'click here',
         marks: [{type: 'link', attrs: {href: 'https://example.com'}}],
       },
     ]);
@@ -311,26 +311,26 @@ describe('SubstackPost — testo con mark', () => {
 });
 
 describe('SubstackPost — setSection', () => {
-  test('imposta draft_section_id quando la sezione esiste', () => {
+  test('sets draft_section_id when the section exists', () => {
     const post = new SubstackPost({user_id: '1'});
 
-    post.setSection('News', [{name: 'Altro', id: 1}, {name: 'News', id: 7}]);
+    post.setSection('News', [{name: 'Other', id: 1}, {name: 'News', id: 7}]);
 
     assert.equal(post.draft_section_id, 7);
   });
 
-  test('lancia quando la sezione non esiste', () => {
+  test('throws when the section does not exist', () => {
     const post = new SubstackPost({user_id: '1'});
 
     assert.throws(
-      () => post.setSection('Mancante', [{name: 'News', id: 7}]),
-      /Section Mancante does not exist/
+      () => post.setSection('Missing', [{name: 'News', id: 7}]),
+      /Section Missing does not exist/
     );
   });
 });
 
 describe('SubstackPost — subscribeWidget', () => {
-  test('add con subscribeWidget senza messaggio usa il testo di default', () => {
+  test('add with subscribeWidget and no message uses the default text', () => {
     const post = new SubstackPost({user_id: '1'});
 
     post.add({type: 'subscribeWidget'});
@@ -343,27 +343,27 @@ describe('SubstackPost — subscribeWidget', () => {
     assert.match(node.content[0].content[0].text, /Subscribe for free/);
   });
 
-  test('add con subscribeWidget e messaggio personalizzato', () => {
+  test('add with subscribeWidget and a custom message', () => {
     const post = new SubstackPost({user_id: '1'});
 
-    post.add({type: 'subscribeWidget', message: 'Messaggio mio'});
+    post.add({type: 'subscribeWidget', message: 'My message'});
 
-    assert.equal(post.draft_body.content[0].content[0].content[0].text, 'Messaggio mio');
+    assert.equal(post.draft_body.content[0].content[0].content[0].text, 'My message');
   });
 
-  // CARATTERIZZAZIONE — comportamento corrente, probabile copia-incolla dal ramo
-  // subscribeWidget: add() con type 'bullet_list' applica la caption di iscrizione
-  // invece di costruire una lista.
-  test('add con bullet_list applica la caption di iscrizione', () => {
+  // CHARACTERIZATION — current behaviour, most likely copy-paste from the subscribeWidget
+  // branch: add() with type 'bullet_list' applies the subscribe caption instead of
+  // building a list.
+  test('add with bullet_list applies the subscribe caption', () => {
     const post = new SubstackPost({user_id: '1'});
 
-    post.add({type: 'bullet_list', message: 'Messaggio mio'});
+    post.add({type: 'bullet_list', message: 'My message'});
 
     assert.deepEqual(post.draft_body.content, [
       {
         type: 'bullet_list',
         attrs: {url: '%%checkout_url%%', text: 'Subscribe', language: 'en'},
-        content: [{type: 'ctaCaption', content: [{type: 'text', text: 'Messaggio mio'}]}],
+        content: [{type: 'ctaCaption', content: [{type: 'text', text: 'My message'}]}],
       },
     ]);
   });
