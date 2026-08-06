@@ -52,6 +52,12 @@ Tests that pin *current* behaviour rather than desired behaviour carry a `CHARAC
 comment explaining why. If one fails, suspect the test before the source — that is the point
 of it. Update the comment in the same commit that changes the behaviour.
 
+**A new test that passes on the first run has proven nothing.** Break the source on purpose —
+revert the fix, strip the field, loosen the schema — confirm it fails, restore. This caught
+two tests that were passing vacuously: `additionalProperties` was dropped from the published
+schema with nobody noticing, and the schema test survived having every `description` stripped.
+The suite runs in ~200ms, so a mutation costs nothing.
+
 ## Style
 
 Two-space indent, semicolons, single quotes in code (imports use double), compact object
@@ -64,6 +70,13 @@ literals (`{a: 1}`, not `{ a: 1 }`).
 - **`node --test` does not discover `*.spec.js`** with its default patterns. The npm scripts
   pass the glob `'src/**/*.spec.js'` explicitly; single quotes matter so Node expands it, not
   the shell.
+- **Check the SDK's own source before asserting how it behaves.** Nearly every gotcha below
+  depends on SDK internals, and it ships readable ESM in
+  `node_modules/@modelcontextprotocol/sdk/dist/esm/`: `server/mcp.js` (registration,
+  validation, published tool definition), `server/zod-json-schema-compat.js` (schema
+  generation), `shared/protocol.js` (handler registration). Reading it is how the
+  `{target: 'draft-7', io: 'input'}` options and the silent `zod-to-json-schema` failure were
+  found; assuming instead once put a false claim in this very file.
 - **Tool failures are results, not rejections.** `McpServer` turns anything a tool throws —
   a validation error, an unknown tool name, a `SubstackAPIException` — into a *successful*
   `CallToolResult` with `isError: true` and the message in `content[0].text`. `client.callTool()`
@@ -118,5 +131,13 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol
 ```
 
 Note the process exits 0 immediately when stdin is at EOF — that is normal, not a crash, so
-exit status alone tells you nothing. Diff this output before and after a refactor to prove the
-protocol is unchanged.
+exit status alone tells you nothing.
+
+Diff this output before and after a refactor to prove the protocol is unchanged, but normalise
+each line first or key-order churn swamps the real change — `$schema` merely moving position
+reads as a diff:
+
+```bash
+diff <(python3 -m json.tool --sort-keys <<< "$(sed -n '2p' before.txt)") \
+     <(python3 -m json.tool --sort-keys <<< "$(sed -n '2p' after.txt)")
+```
