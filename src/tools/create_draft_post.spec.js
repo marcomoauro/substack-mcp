@@ -21,36 +21,36 @@ after(() => {
   restoreEnv();
 });
 
-const VALID_ARGS = {title: 'Il mio titolo', subtitle: 'Il mio sottotitolo', body: 'Il corpo'};
+const VALID_ARGS = {title: 'My title', subtitle: 'My subtitle', body: 'The body'};
 
 describe('createDraftPostSchema', () => {
-  test('accetta title, subtitle e body come stringhe', () => {
+  test('accepts title, subtitle and body as strings', () => {
     assert.deepEqual(createDraftPostSchema.parse(VALID_ARGS), VALID_ARGS);
   });
 
-  test('richiede tutti e tre i campi', () => {
-    assert.throws(() => createDraftPostSchema.parse({title: 'solo il titolo'}), z.ZodError);
+  test('requires all three fields', () => {
+    assert.throws(() => createDraftPostSchema.parse({title: 'title only'}), z.ZodError);
   });
 });
 
-describe('createDraftPostHandler — successo', () => {
-  test('restituisce OK', async () => {
+describe('createDraftPostHandler — success', () => {
+  test('returns OK', async () => {
     assert.equal(await createDraftPostHandler(VALID_ARGS), 'OK');
   });
 
-  test('invia una sola richiesta all\'endpoint drafts', async () => {
+  test('sends exactly one request to the drafts endpoint', async () => {
     await createDraftPostHandler(VALID_ARGS);
 
     assert.equal(msw.requests.length, 1);
     assert.equal(msw.requests[0].url, DRAFTS_URL);
   });
 
-  test('mappa gli argomenti sui campi della bozza', async () => {
+  test('maps the arguments onto the draft fields', async () => {
     await createDraftPostHandler(VALID_ARGS);
 
     const {body} = msw.requests[0];
-    assert.equal(body.draft_title, 'Il mio titolo');
-    assert.equal(body.draft_subtitle, 'Il mio sottotitolo');
+    assert.equal(body.draft_title, 'My title');
+    assert.equal(body.draft_subtitle, 'My subtitle');
     assert.deepEqual(body.draft_bylines, [{id: 12345, is_guest: false}]);
     assert.equal(body.audience, 'everyone');
     assert.equal(body.write_comment_permissions, 'everyone');
@@ -58,20 +58,20 @@ describe('createDraftPostHandler — successo', () => {
     assert.equal(body.draft_section_id, null);
   });
 
-  // Prima del fix al doppio encoding l'handler passava la stringa grezza a setBody, e
-  // getDraft le applicava JSON.stringify: draft_body arrivava come '"Il corpo"', che
-  // l'editor Substack non sa interpretare come documento. Ora parseBody costruisce il
-  // documento prima di setBody, quindi draft_body è la serializzazione di un doc valido.
-  test('draft_body arriva come documento ProseMirror serializzato', async () => {
+  // Before the double-encoding fix the handler passed the raw string to setBody, and
+  // getDraft applied JSON.stringify to it: draft_body arrived as '"The body"', which the
+  // Substack editor cannot parse as a document. parseBody now builds the document before
+  // setBody, so draft_body is the serialization of a valid doc.
+  test('draft_body arrives as a serialized ProseMirror document', async () => {
     await createDraftPostHandler(VALID_ARGS);
 
     assert.deepEqual(JSON.parse(msw.requests[0].body.draft_body), {
       type: 'doc',
-      content: [{type: 'paragraph', content: [{type: 'text', text: 'Il corpo'}]}],
+      content: [{type: 'paragraph', content: [{type: 'text', text: 'The body'}]}],
     });
   });
 
-  test('autentica con il token preso dalle env var', async () => {
+  test('authenticates with the token taken from the env vars', async () => {
     await createDraftPostHandler(VALID_ARGS);
 
     assert.equal(
@@ -80,7 +80,7 @@ describe('createDraftPostHandler — successo', () => {
     );
   });
 
-  test('legge le env var a runtime, non all\'import del modulo', async () => {
+  test('reads the env vars at call time, not at module import', async () => {
     const previous = process.env.SUBSTACK_USER_ID;
     process.env.SUBSTACK_USER_ID = '99999';
 
@@ -93,88 +93,88 @@ describe('createDraftPostHandler — successo', () => {
   });
 });
 
-describe('createDraftPostHandler — conversione del body', () => {
-  // parseBody non è esportata, quindi la si esercita attraverso l'handler osservando il
-  // draft_body effettivamente inviato.
-  async function inviaEDecodifica(body) {
+describe('createDraftPostHandler — body conversion', () => {
+  // parseBody is not exported, so it is exercised through the handler by observing the
+  // draft_body actually sent.
+  async function sendAndDecode(body) {
     await createDraftPostHandler({...VALID_ARGS, body});
     return JSON.parse(msw.requests.at(-1).body.draft_body);
   }
 
-  function testiDeiParagrafi(doc) {
+  function paragraphTexts(doc) {
     return doc.content.map((paragraph) => paragraph.content[0].text);
   }
 
-  test('il testo semplice diventa un singolo paragrafo', async () => {
-    const doc = await inviaEDecodifica('Una riga sola');
+  test('plain text becomes a single paragraph', async () => {
+    const doc = await sendAndDecode('A single line');
 
     assert.deepEqual(doc, {
       type: 'doc',
-      content: [{type: 'paragraph', content: [{type: 'text', text: 'Una riga sola'}]}],
+      content: [{type: 'paragraph', content: [{type: 'text', text: 'A single line'}]}],
     });
   });
 
-  test('i paragrafi separati da una riga vuota diventano nodi distinti', async () => {
-    const doc = await inviaEDecodifica('Primo paragrafo\n\nSecondo paragrafo');
+  test('paragraphs separated by a blank line become distinct nodes', async () => {
+    const doc = await sendAndDecode('First paragraph\n\nSecond paragraph');
 
-    assert.deepEqual(testiDeiParagrafi(doc), ['Primo paragrafo', 'Secondo paragrafo']);
+    assert.deepEqual(paragraphTexts(doc), ['First paragraph', 'Second paragraph']);
   });
 
-  // Lo split è su /\n+/, quindi ogni interruzione di riga apre un paragrafo: un testo a
-  // capo singolo non resta un paragrafo unico. La descrizione della PR parla di "blank
-  // lines", ma il comportamento reale è questo.
-  test('anche un a capo singolo apre un nuovo paragrafo', async () => {
-    const doc = await inviaEDecodifica('Riga uno\nRiga due');
+  // The split is on /\n+/, so every line break opens a paragraph: text with single
+  // newlines does not stay one paragraph. The PR description says "blank lines", but this
+  // is the actual behaviour.
+  test('a single newline also starts a new paragraph', async () => {
+    const doc = await sendAndDecode('Line one\nLine two');
 
-    assert.deepEqual(testiDeiParagrafi(doc), ['Riga uno', 'Riga due']);
+    assert.deepEqual(paragraphTexts(doc), ['Line one', 'Line two']);
   });
 
-  test('le righe vuote in eccesso non producono paragrafi vuoti', async () => {
-    const doc = await inviaEDecodifica('\n\nPrimo\n\n\n\nSecondo\n\n');
+  test('surplus blank lines do not produce empty paragraphs', async () => {
+    const doc = await sendAndDecode('\n\nFirst\n\n\n\nSecond\n\n');
 
-    assert.deepEqual(testiDeiParagrafi(doc), ['Primo', 'Secondo']);
+    assert.deepEqual(paragraphTexts(doc), ['First', 'Second']);
   });
 
-  test('un documento ProseMirror in JSON viene passato intatto', async () => {
-    const documento = {
+  test('a ProseMirror document given as JSON is passed through untouched', async () => {
+    const doc = {
       type: 'doc',
       content: [
-        {type: 'heading', attrs: {level: 2}, content: [{type: 'text', text: 'Titolo'}]},
-        {type: 'paragraph', content: [{type: 'text', text: 'Corpo'}]},
+        {type: 'heading', attrs: {level: 2}, content: [{type: 'text', text: 'Heading'}]},
+        {type: 'paragraph', content: [{type: 'text', text: 'Body'}]},
       ],
     };
 
-    assert.deepEqual(await inviaEDecodifica(JSON.stringify(documento)), documento);
+    assert.deepEqual(await sendAndDecode(JSON.stringify(doc)), doc);
   });
 
-  test('un JSON valido che non è un documento viene trattato come testo', async () => {
-    const doc = await inviaEDecodifica('{"a":1}');
+  test('valid JSON that is not a document is treated as text', async () => {
+    const doc = await sendAndDecode('{"a":1}');
 
-    assert.deepEqual(testiDeiParagrafi(doc), ['{"a":1}']);
+    assert.deepEqual(paragraphTexts(doc), ['{"a":1}']);
   });
 
-  test('un JSON malformato viene trattato come testo', async () => {
-    const doc = await inviaEDecodifica('{non valido');
+  test('malformed JSON is treated as text', async () => {
+    const doc = await sendAndDecode('{not valid');
 
-    assert.deepEqual(testiDeiParagrafi(doc), ['{non valido']);
+    assert.deepEqual(paragraphTexts(doc), ['{not valid']);
   });
 
-  test('una stringa vuota produce un documento senza contenuto', async () => {
-    assert.deepEqual(await inviaEDecodifica(''), {type: 'doc', content: []});
+  test('an empty string produces a document with no content', async () => {
+    assert.deepEqual(await sendAndDecode(''), {type: 'doc', content: []});
   });
 });
 
-describe('createDraftPostHandler — errori', () => {
-  test('lancia ZodError sugli argomenti invalidi senza fare richieste', async () => {
+describe('createDraftPostHandler — errors', () => {
+  test('throws ZodError on invalid arguments without issuing any request', async () => {
     await assert.rejects(
-      () => createDraftPostHandler({title: 'solo il titolo'}),
+      () => createDraftPostHandler({title: 'title only'}),
       (error) => error instanceof z.ZodError
     );
 
     assert.equal(msw.requests.length, 0);
   });
 
-  test('rifiuta un body che non è una stringa', async () => {
+  test('rejects a body that is not a string', async () => {
     await assert.rejects(
       () => createDraftPostHandler({...VALID_ARGS, body: {type: 'doc'}}),
       (error) => error instanceof z.ZodError
@@ -183,7 +183,7 @@ describe('createDraftPostHandler — errori', () => {
     assert.equal(msw.requests.length, 0);
   });
 
-  test('propaga gli errori dell\'API Substack', async () => {
+  test('propagates Substack API errors', async () => {
     msw.server.use(msw.draftsHandler(() => new HttpResponse('boom', {status: 500})));
 
     const error = await createDraftPostHandler(VALID_ARGS).catch((e) => e);

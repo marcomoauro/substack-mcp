@@ -12,12 +12,12 @@ export const DRAFT_RESPONSE = {
 };
 
 /**
- * Crea il server MSW usato dagli integration test.
+ * Creates the MSW server used by the integration tests.
  *
- * `requests` accumula ogni richiesta intercettata: {method, url, headers, body}.
- * `draftsHandler(responder)` costruisce un handler per POST /drafts che registra la
- * richiesta e poi delega la risposta a `responder`. Usalo anche negli override via
- * `server.use()`, altrimenti quella richiesta non finisce nel registro.
+ * `requests` accumulates every intercepted request: {method, url, headers, body}.
+ * `draftsHandler(responder)` builds a handler for POST /drafts that records the request and
+ * then delegates the response to `responder`. Use it for overrides passed to `server.use()`
+ * as well, otherwise that request never reaches the log.
  */
 export function createMswServer() {
   const requests = [];

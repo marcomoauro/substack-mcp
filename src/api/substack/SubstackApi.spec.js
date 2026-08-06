@@ -18,21 +18,21 @@ function createApi() {
   });
 }
 
-describe('SubstackApi — costruttore', () => {
-  test('deriva publication_url e hostname', () => {
+describe('SubstackApi — constructor', () => {
+  test('derives publication_url and hostname', () => {
     const api = createApi();
 
     assert.equal(api.publication_url, 'https://test.substack.com/api/v1');
     assert.equal(api.hostname, 'https://test.substack.com');
   });
 
-  test('base_url ha un default su substack.com', () => {
+  test('base_url defaults to substack.com', () => {
     const api = createApi();
 
     assert.equal(api.base_url, 'https://substack.com/api/v1');
   });
 
-  test('base_url esplicito vince sul default', () => {
+  test('an explicit base_url wins over the default', () => {
     const api = new SubstackApi({
       publication_url: TEST_ENV.SUBSTACK_PUBLICATION_URL,
       auth_token: 'tok',
@@ -42,7 +42,7 @@ describe('SubstackApi — costruttore', () => {
     assert.equal(api.base_url, 'https://custom.example/api/v9');
   });
 
-  test('costruisce il cookie con entrambi i nomi di sessione', () => {
+  test('builds the cookie with both session names', () => {
     const api = createApi();
 
     assert.equal(
@@ -53,10 +53,10 @@ describe('SubstackApi — costruttore', () => {
 });
 
 describe('SubstackApi — postDraft', () => {
-  test('invia POST all\'endpoint drafts con header e body corretti', async () => {
+  test('sends a POST to the drafts endpoint with the right headers and body', async () => {
     const api = createApi();
 
-    const result = await api.postDraft({draft_title: 'Titolo', draft_body: '{}'});
+    const result = await api.postDraft({draft_title: 'Title', draft_body: '{}'});
 
     assert.deepEqual(result, DRAFT_RESPONSE);
     assert.equal(msw.requests.length, 1);
@@ -69,10 +69,10 @@ describe('SubstackApi — postDraft', () => {
       'substack.sid=test-session-token; connect.sid=test-session-token;'
     );
     assert.equal(request.headers.referer, 'https://test.substack.com/publish/post');
-    assert.deepEqual(request.body, {draft_title: 'Titolo', draft_body: '{}'});
+    assert.deepEqual(request.body, {draft_title: 'Title', draft_body: '{}'});
   });
 
-  test('restituisce il payload della risposta', async () => {
+  test('returns the response payload', async () => {
     msw.server.use(
       msw.draftsHandler(() => HttpResponse.json({id: 42, custom: true}, {status: 201}))
     );
@@ -82,9 +82,9 @@ describe('SubstackApi — postDraft', () => {
     assert.deepEqual(result, {id: 42, custom: true});
   });
 
-  // CARATTERIZZAZIONE — axios lancia sulle risposte non-2xx prima che handleResponse
-  // possa valutare lo status, quindi il ramo SubstackAPIException è irraggiungibile.
-  test('su 500 lancia un AxiosError, non un SubstackAPIException', async () => {
+  // CHARACTERIZATION — axios throws on non-2xx responses before handleResponse gets to
+  // evaluate the status, so the SubstackAPIException branch is unreachable.
+  test('throws an AxiosError on 500, not a SubstackAPIException', async () => {
     msw.server.use(msw.draftsHandler(() => new HttpResponse('boom', {status: 500})));
 
     const error = await createApi().postDraft({}).catch((e) => e);
@@ -94,7 +94,7 @@ describe('SubstackApi — postDraft', () => {
     assert.doesNotMatch(error.message, /SubstackAPIException/);
   });
 
-  test('su 401 lancia e registra comunque la richiesta', async () => {
+  test('throws on 401 and still records the request', async () => {
     msw.server.use(msw.draftsHandler(() => new HttpResponse('unauthorized', {status: 401})));
 
     const error = await createApi().postDraft({}).catch((e) => e);
