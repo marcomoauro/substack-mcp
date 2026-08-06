@@ -3,7 +3,11 @@ import SubstackApi from "../api/substack/SubstackApi.js";
 import SubstackPost from "../api/substack/SubstackPost.js";
 
 
-export const createDraftPostSchema = z.object({
+// strictObject, not object: an unknown key must be reported rather than stripped. The
+// validation message is the only feedback an LLM gets to correct a malformed call, and
+// silently discarding a key it believed it passed is both confusing and unsafe — a model
+// sending `content` instead of `body` would otherwise only be told `body` is missing.
+export const createDraftPostSchema = z.strictObject({
   title: z
     .string()
     .describe(

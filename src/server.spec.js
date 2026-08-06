@@ -75,7 +75,7 @@ describe('MCP server — list_tools', () => {
     }
   });
 
-  test('the inputSchema is a draft-07 document generated in input mode', async () => {
+  test('the inputSchema is a draft-07 document that closes the object', async () => {
     const {client, close} = await connectMcpClient();
 
     try {
@@ -83,9 +83,9 @@ describe('MCP server — list_tools', () => {
       const {inputSchema} = tools[0];
 
       assert.equal(inputSchema.$schema, 'http://json-schema.org/draft-07/schema#');
-      // `io: 'input'` deliberately omits additionalProperties: a zod object strips unknown
-      // keys rather than rejecting them, so advertising `false` would misdescribe the tool.
-      assert.equal(Object.hasOwn(inputSchema, 'additionalProperties'), false);
+      // Accurate only because the schema is a strictObject: a plain z.object strips unknown
+      // keys instead of rejecting them, and would publish this as an empty promise.
+      assert.equal(inputSchema.additionalProperties, false);
     } finally {
       await close();
     }
@@ -160,6 +160,64 @@ describe('MCP server — call_tool', () => {
     } finally {
       await close();
     }
+  });
+
+  // The validation message is the whole feedback loop for an LLM: it is what the model reads
+  // to fix a malformed call and retry. These tests treat its content as a contract, not as an
+  // implementation detail, because a degraded message does not fail anything on its own — the
+  // call still returns, the model just cannot work out what to change.
+  describe('the validation message an LLM has to act on', () => {
+    async function callWith(args) {
+      const {client, close} = await connectMcpClient();
+
+      try {
+        const result = await client.callTool({name: 'create_draft_post', arguments: args});
+        assert.equal(result.isError, true);
+        return result.content[0].text;
+      } finally {
+        await close();
+      }
+    }
+
+    test('names every missing field, not just the first', async () => {
+      const text = await callWith({});
+
+      for (const field of ['title', 'subtitle', 'body']) {
+        assert.match(text, new RegExp(`at ${field}\\b`), `should point at ${field}`);
+      }
+    });
+
+    test('reports a wrong type with both what was expected and what arrived', async () => {
+      const text = await callWith({title: 42, subtitle: 'S', body: 'B'});
+
+      assert.match(text, /expected string, received number at title/);
+    });
+
+    test('names an unrecognised key instead of silently dropping it', async () => {
+      // The realistic LLM mistake: `content` instead of `body`. Being told only that `body`
+      // is missing leaves the model unable to see that its own key was the problem.
+      const text = await callWith({title: 'T', subtitle: 'S', content: 'B'});
+
+      assert.match(text, /at body\b/);
+      assert.match(text, /Unrecognized key: "content"/);
+    });
+
+    test('travels as tool output, which is the channel a model can read', async () => {
+      const {client, close} = await connectMcpClient();
+
+      try {
+        const result = await client.callTool({name: 'create_draft_post', arguments: {}});
+
+        // Not a JSON-RPC error: an isError result with the reason in text content. A protocol
+        // error would leave many clients with nothing to hand back to the model.
+        assert.equal(result.isError, true);
+        assert.equal(result.content.length, 1);
+        assert.equal(result.content[0].type, 'text');
+        assert.ok(result.content[0].text.length > 0, 'the reason must not be empty');
+      } finally {
+        await close();
+      }
+    });
   });
 
   test('a Substack API error reaches the client as an isError result', async () => {

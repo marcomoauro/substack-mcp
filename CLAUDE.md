@@ -81,11 +81,17 @@ literals (`{a: 1}`, not `{ a: 1 }`).
   `Content-Type` by hand, which axios used to do implicitly.
 - **The SDK owns JSON Schema generation** — never convert a schema by hand. `registerTool`
   publishes `inputSchema` itself, via `z.toJSONSchema(schema, {target: 'draft-7', io: 'input'})`
-  under the hood (`server/zod-json-schema-compat.js`). Two traps if you are tempted to go back
-  to the low-level `Server`: `zod-to-json-schema` returns a bare `{$schema}` for a zod 4 schema
-  **without throwing**, publishing a parameterless tool to every client; and `io: 'input'`
-  omits `additionalProperties: false` on purpose, because a zod object strips unknown keys
-  rather than rejecting them.
+  under the hood (`server/zod-json-schema-compat.js`). If you are ever tempted back to the
+  low-level `Server`, know that `zod-to-json-schema` returns a bare `{$schema}` for a zod 4
+  schema **without throwing**, publishing a parameterless tool to every client.
+- **Tool schemas are `z.strictObject`, never `z.object`.** The validation message is the only
+  feedback an LLM gets to repair a malformed call, and a plain `z.object` *strips* unknown keys
+  silently: a model sending `content` instead of `body` is told only that `body` is missing,
+  never that its own key was ignored. `strictObject` adds `Unrecognized key: "content"`, and
+  makes the published `additionalProperties: false` truthful instead of an empty promise.
+  Prefer `z.strictObject({...})` over `.strict()` — zod 4 points at the former.
+  `src/server.spec.js` pins the wording of these messages on purpose: a degraded message
+  breaks nothing by itself, the call still returns, so only an explicit assertion catches it.
 - **zod is not optional and not ours to drop.** It is a non-optional `peerDependency` of the
   SDK, and `registerTool` throws `inputSchema must be a Zod schema or raw shape` for anything
   else — the SDK's validation *is* zod. npm auto-installs it even if it leaves `package.json`,
