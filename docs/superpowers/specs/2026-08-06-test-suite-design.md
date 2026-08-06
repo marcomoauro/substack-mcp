@@ -102,19 +102,38 @@ costruzione dell'URL: verifichiamo che `new URL('api/v1', publication_url)` prod
 
 ## Struttura dei file
 
+I test sono **colocati accanto al sorgente** e prendono il nome del file che testano, con
+suffisso `.spec.js`. Il test sta vicino a ciò che verifica: si trova subito e non si dimentica
+di aggiornarlo quando il sorgente cambia. Gli helper condivisi, che non testano nulla di
+specifico, restano in `test/helpers/`.
+
 ```
+src/
+  index.js                          # entrypoint, non testato (solo wiring)
+  server.js
+  server.spec.js                    # integration MCP
+  tools/
+    create_draft_post.js
+    create_draft_post.spec.js       # integration handler
+  api/substack/
+    SubstackApi.js
+    SubstackApi.spec.js             # integration HTTP
+    SubstackPost.js
+    SubstackPost.spec.js            # unit, nessuna rete
 test/
   helpers/
-    msw-server.js        # setupServer + handler di default + cattura delle richieste
-    env.js               # set/restore delle env var di test
-    mcp-harness.js       # coppia Client/Server MCP collegata via InMemoryTransport
-  unit/
-    substack-post.test.js
-  integration/
-    substack-api.test.js
-    create-draft-post.test.js
-    mcp-server.test.js
+    msw-server.js                   # setupServer + handler di default + cattura richieste
+    env.js                          # set/restore delle env var di test
+    mcp-harness.js                  # coppia Client/Server MCP via InMemoryTransport
 ```
+
+### Discovery: serve un glob esplicito
+
+I pattern di default di `node --test` coprono `*.test.js`, `*-test.js`, `*_test.js`,
+`test-*.js` e la cartella `test/`, **ma non `*.spec.js`** (verificato su Node 22: discovery di
+default → 0 test trovati). Gli script npm passano quindi il glob esplicito
+`'src/**/*.spec.js'`, che Node 22 espande nativamente — le virgolette servono a impedire
+l'espansione da parte della shell.
 
 ### `helpers/msw-server.js`
 
@@ -190,15 +209,52 @@ Script in `package.json`:
 
 | Script | Comando |
 |---|---|
-| `test` | `node --test test/` |
-| `test:watch` | `node --test --watch test/` |
-| `test:coverage` | `node --test --experimental-test-coverage test/` |
+| `test` | `node --test 'src/**/*.spec.js'` |
+| `test:watch` | `node --test --watch 'src/**/*.spec.js'` |
+| `test:coverage` | `node --test --experimental-test-coverage --test-coverage-exclude='**/*.spec.js' --test-coverage-exclude='test/**' 'src/**/*.spec.js'` |
 
 `devDependencies`: `msw` `2.15.0` (pin esatto, coerente con lo stile delle dependency
 esistenti).
 
-`package.json` acquisisce `"files": ["src"]` così il pacchetto pubblicato su npm non include
-la suite di test.
+## Esclusione dei test dagli artefatti distribuiti
+
+Con i test colocati in `src/` servono due esclusioni esplicite. Entrambe verificate
+empiricamente.
+
+### Pacchetto npm
+
+`package.json` acquisisce:
+
+```json
+"files": ["src", "!src/**/*.spec.js"]
+```
+
+Il campo `files` è una allowlist, quindi `test/` e `docs/` sono già fuori; il pattern di
+negazione toglie i file di test da `src/`. Verificato con `npm pack --dry-run`: nel tarball
+restano solo i sorgenti.
+
+### Immagine Docker
+
+Il `Dockerfile` fa `COPY ./ /opt` senza filtri e **il repo non ha un `.dockerignore`**: oggi
+l'immagine si porta dentro anche `node_modules` locale, `.git`, `.idea` e `docs/`. Aggiungiamo
+un `.dockerignore`:
+
+```
+node_modules
+**/*.spec.js
+test
+docs
+.git
+.github
+.idea
+.vscode
+.env*
+```
+
+Oltre a escludere i test, questo riduce sensibilmente il contesto di build e la dimensione
+dell'immagine. `msw` resta comunque fuori dal runtime anche senza questo accorgimento, perché
+`yarn install --production` non installa le `devDependencies`; il problema erano solo i file
+dei test.
 
 ### CI
 
