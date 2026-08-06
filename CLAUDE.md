@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-MCP server exposing Substack automation to LLM clients. Node 22 (`.nvmrc`), ESM, yarn.
+MCP server exposing Substack automation to LLM clients. Node 22 (`.nvmrc`), ESM, npm.
 
 ## Language
 
@@ -12,10 +12,10 @@ used in the chat: do not mirror the conversation language into the codebase.
 
 | Command | Purpose |
 |---|---|
-| `yarn test` | Run the suite (`node --test 'src/**/*.spec.js'`) |
-| `yarn test:watch` | Same, in watch mode |
-| `yarn test:coverage` | Coverage report, spec files excluded |
-| `NPM_TOKEN=unused yarn <cmd>` | Needed locally — see Gotchas |
+| `npm ci` | Install from `package-lock.json` (never `npm install` in CI or Docker) |
+| `npm test` | Run the suite (`node --test 'src/**/*.spec.js'`) |
+| `npm run test:watch` | Same, in watch mode |
+| `npm run test:coverage` | Coverage report, spec files excluded |
 | `npm pack --dry-run` | Verify what ships to npm |
 
 ## Layout
@@ -52,9 +52,8 @@ literals (`{a: 1}`, not `{ a: 1 }`).
 
 ## Gotchas
 
-- **`yarn` fails locally** with `Failed to replace env in config: ${NPM_TOKEN}` — the global
-  `~/.npmrc` references a variable that is not exported. Prefix with `NPM_TOKEN=unused`. Does
-  not affect CI, which has no such file.
+- **Dependencies are pinned exactly** — no `^` or `~` ranges anywhere. The project `.npmrc`
+  sets `save-exact=true` so `npm install <pkg>` keeps it that way; do not add ranges by hand.
 - **`node --test` does not discover `*.spec.js`** with its default patterns. The npm scripts
   pass the glob `'src/**/*.spec.js'` explicitly; single quotes matter so Node expands it, not
   the shell.

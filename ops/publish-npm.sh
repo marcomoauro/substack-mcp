@@ -17,10 +17,10 @@ fi
 
 # Install dependencies
 echo "Installing dependencies..."
-yarn install --frozen-lockfile
+npm ci
 
 # Publish to npm
 echo "Publishing to npm..."
-yarn publish --non-interactive --access public
+npm publish --access public
 
 echo "Package published successfully!" 
