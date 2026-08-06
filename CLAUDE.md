@@ -56,7 +56,7 @@ of it. Update the comment in the same commit that changes the behaviour.
 revert the fix, strip the field, loosen the schema — confirm it fails, restore. This caught
 two tests that were passing vacuously: `additionalProperties` was dropped from the published
 schema with nobody noticing, and the schema test survived having every `description` stripped.
-The suite runs in ~200ms, so a mutation costs nothing.
+The whole suite runs in well under a second, so a mutation costs nothing.
 
 ## Style
 
@@ -80,10 +80,12 @@ literals (`{a: 1}`, not `{ a: 1 }`).
 - **Tool failures are results, not rejections.** `McpServer` turns anything a tool throws —
   a validation error, an unknown tool name, a `SubstackAPIException` — into a *successful*
   `CallToolResult` with `isError: true` and the message in `content[0].text`. `client.callTool()`
-  does **not** reject, so `await client.callTool(...).catch(e => e)` silently yields the result
-  object and every assertion on it passes vacuously. Assert `result.isError` and
-  `result.content[0].text` instead. (Protocol-level failures — an unknown *method*, a malformed
-  request — are still `McpError`, prefixed `MCP error -32601: ` and friends.)
+  does **not** reject, so `await client.callTool(...).catch(e => e)` hands you the *result*, not
+  an error: `assert.match(error.message, ...)` then dies with `The "string" argument must be of
+  type string` instead of a useful diff, while anything looser (`assert.ok(error)`) passes while
+  checking nothing. Assert `result.isError` and `result.content[0].text` instead.
+  (Protocol-level failures — an unknown *method*, a malformed request — are still `McpError`,
+  prefixed `MCP error -32601: ` and friends.)
 - **`callTool` results are `JSON.stringify`-ed by the server**, so a handler returning `'OK'`
   arrives as `text: '"OK"'` — quotes included.
 - **`SubstackPost.getDraft()` calls `JSON.stringify` on `draft_body`**, so it must be handed an

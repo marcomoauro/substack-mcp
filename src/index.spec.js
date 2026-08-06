@@ -31,7 +31,11 @@ function runEntrypoint({env = TEST_ENV, stdin = ''} = {}) {
         timeout: 10_000,
       },
       (error, stdout, stderr) => {
-        resolve({code: error?.code ?? 0, stdout, stderr});
+        // A signal kill — the timeout above firing, say — arrives as `code: null` with
+        // `signal` set. Collapsing that to 0 with `?? 0` would make a hung entrypoint
+        // indistinguishable from a clean exit, defeating every assertion below that reads
+        // the exit code. Report the signal so callers can tell the two apart.
+        resolve({code: error ? error.code : 0, signal: error?.signal ?? null, stdout, stderr});
       }
     );
 
@@ -45,8 +49,9 @@ describe('entrypoint — environment check', () => {
       const env = {...TEST_ENV};
       delete env[missing];
 
-      const {code, stderr} = await runEntrypoint({env});
+      const {code, signal, stderr} = await runEntrypoint({env});
 
+      assert.equal(signal, null, 'the process should exit on its own, not be killed');
       assert.notEqual(code, 0, 'the process should fail');
       assert.match(
         stderr,
@@ -56,8 +61,11 @@ describe('entrypoint — environment check', () => {
   }
 
   test('refuses to start when an env var is present but empty', async () => {
-    const {code, stderr} = await runEntrypoint({env: {...TEST_ENV, SUBSTACK_USER_ID: ''}});
+    const {code, signal, stderr} = await runEntrypoint({
+      env: {...TEST_ENV, SUBSTACK_USER_ID: ''},
+    });
 
+    assert.equal(signal, null, 'the process should exit on its own, not be killed');
     assert.notEqual(code, 0, 'the process should fail');
     assert.match(stderr, /must be set/);
   });
@@ -67,8 +75,11 @@ describe('entrypoint — stdio transport', () => {
   // Automates the manual probe documented in CLAUDE.md: a passing unit suite does not prove
   // the binary boots and speaks the protocol over a real stdio transport.
   test('completes the handshake and lists the tools over stdio', async () => {
-    const {stdout, stderr} = await runEntrypoint({stdin: HANDSHAKE});
+    const {stdout, stderr, signal} = await runEntrypoint({stdin: HANDSHAKE});
 
+    // Without this, a server that answered the handshake and then hung would still satisfy
+    // every assertion below — the replies are already in stdout by the time it is killed.
+    assert.equal(signal, null, 'the process should exit on its own, not be killed');
     assert.equal(stderr, '', 'nothing should be written to stderr');
 
     const messages = stdout
@@ -96,8 +107,11 @@ describe('entrypoint — stdio transport', () => {
   // The process exits 0 as soon as stdin reaches EOF; that is the documented normal shutdown,
   // not a crash, so exit status alone must never be read as proof the server worked.
   test('exits cleanly when stdin reaches EOF', async () => {
-    const {code} = await runEntrypoint({stdin: ''});
+    const {code, signal} = await runEntrypoint({stdin: ''});
 
+    // `signal` carries the whole point of this test: a hung entrypoint gets SIGTERM-ed by the
+    // helper's timeout, and a killed process must never read as having exited cleanly.
+    assert.equal(signal, null, 'the process should exit on its own, not be killed');
     assert.equal(code, 0);
   });
 });
