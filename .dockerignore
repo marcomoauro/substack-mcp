@@ -1,0 +1,11 @@
+node_modules
+**/*.spec.js
+test
+docs
+.git
+.github
+.idea
+.vscode
+.env*
+tmp
+coverage

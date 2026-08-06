@@ -7,8 +7,15 @@
   "bin": {
     "substack-mcp": "src/index.js"
   },
+  "files": [
+    "src",
+    "!src/**/*.spec.js"
+  ],
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node --test 'src/**/*.spec.js'",
+    "test:watch": "node --test --watch 'src/**/*.spec.js'",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude='**/*.spec.js' --test-coverage-exclude='test/**' 'src/**/*.spec.js'"
   },
   "repository": {
     "type": "git",
@@ -35,5 +42,8 @@
     "axios": "1.9.0",
     "zod": "3.24.4",
     "zod-to-json-schema": "3.24.5"
+  },
+  "devDependencies": {
+    "msw": "2.15.0"
   }
 }
