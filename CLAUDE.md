@@ -63,6 +63,10 @@ literals (`{a: 1}`, not `{ a: 1 }`).
   arrives as `text: '"OK"'` — quotes included.
 - **`SubstackPost.getDraft()` calls `JSON.stringify` on `draft_body`**, so it must be handed an
   object. Passing a string double-encodes it; this was a real bug (#4).
+- **HTTP goes through native `fetch`** — no HTTP client dependency. `fetch` does not reject on
+  non-2xx, so `SubstackApi.handleResponse` is what turns a failing status into an error
+  (`SubstackAPIException: <status> <statusText>`); it also serializes the body and sets
+  `Content-Type` by hand, which axios used to do implicitly.
 
 ## Verifying the server actually works
 

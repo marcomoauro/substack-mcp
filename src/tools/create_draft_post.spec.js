@@ -188,6 +188,6 @@ describe('createDraftPostHandler — errors', () => {
 
     const error = await createDraftPostHandler(VALID_ARGS).catch((e) => e);
 
-    assert.equal(error.response.status, 500);
+    assert.match(error.message, /^SubstackAPIException: 500\b/);
   });
 });
