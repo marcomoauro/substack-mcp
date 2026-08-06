@@ -79,11 +79,10 @@ describe('entrypoint — stdio transport', () => {
     const initialize = messages.find((message) => message.id === 1);
     assert.equal(initialize.result.serverInfo.name, 'Substack MCP');
     assert.equal(initialize.result.protocolVersion, '2024-11-05');
-    assert.deepEqual(Object.keys(initialize.result.capabilities).sort(), [
-      'logging',
-      'resources',
-      'tools',
-    ]);
+    // Only `tools` is advertised. The server used to declare `resources` and `logging` too
+    // while registering no handler for either, so `resources/list` answered -32601 Method
+    // not found; McpServer derives capabilities from what is actually registered.
+    assert.deepEqual(Object.keys(initialize.result.capabilities), ['tools']);
 
     const listTools = messages.find((message) => message.id === 2);
     assert.equal(listTools.result.tools.length, 1);

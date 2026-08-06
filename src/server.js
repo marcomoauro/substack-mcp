@@ -1,9 +1,4 @@
-import {Server} from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  ListToolsRequestSchema,
-  CallToolRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
-import {z} from "zod";
+import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {createDraftPostSchema, createDraftPostHandler} from "./tools/create_draft_post.js";
 
 export const tools = {
@@ -15,49 +10,18 @@ export const tools = {
 };
 
 export function createServer() {
-  const server = new Server({
-      name: "Substack MCP",
-      version: "1.0.0"
-    },
-    {
-      capabilities: {
-        tools: {},
-        resources: {},
-        logging: {}
-      },
-    });
+  // McpServer derives tools/list from what is registered here and validates every call
+  // against the tool's zod schema before the handler runs, so there is no hand-written
+  // list_tools handler, dispatch table or JSON Schema conversion to keep in sync.
+  // Capabilities are derived too: the server no longer advertises `resources` and
+  // `logging`, which it never implemented.
+  const server = new McpServer({name: "Substack MCP", version: "1.0.0"});
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: Object.entries(tools).map(([name, {description, schema}]) => ({
-        name,
-        description,
-        // Same options the SDK's own zod-4 compat layer uses for tool input schemas.
-        inputSchema: z.toJSONSchema(schema, {target: "draft-7", io: "input"}),
-      })),
-    };
-  });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const {name, arguments: args} = request.params;
-
-    try {
-      if (!Object.hasOwn(tools, name)) {
-        throw new Error(`Unknown tool: ${name}`);
-      }
-
-      const result = await tools[name].handler(args);
-
-      return {
-        content: [{type: "text", text: JSON.stringify(result, null, 2)}],
-      };
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        throw new Error(`Invalid input: ${JSON.stringify(error.issues)}`);
-      }
-      throw error;
-    }
-  });
+  for (const [name, {description, schema, handler}] of Object.entries(tools)) {
+    server.registerTool(name, {description, inputSchema: schema}, async (args) => ({
+      content: [{type: "text", text: JSON.stringify(await handler(args), null, 2)}],
+    }));
+  }
 
   return server;
 }

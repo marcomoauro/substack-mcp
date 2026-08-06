@@ -30,7 +30,12 @@ used in the chat: do not mirror the conversation language into the codebase.
 - `test/helpers/` — shared test helpers only; no tests live here.
 
 Adding a tool means adding a file under `src/tools/` and one entry to the `tools` registry in
-`src/server.js`. `list_tools` derives from that registry, so the two cannot drift apart.
+`src/server.js` — nothing else. `createServer()` loops over the registry calling
+`McpServer.registerTool`, and the SDK derives `tools/list`, argument validation and dispatch
+from what was registered, so there is no second place to update and nothing that can drift.
+Do not add `setRequestHandler` calls for `tools/list` or `tools/call`: registering a tool
+already covers both, and the SDK guards the clash rather than letting it slide — it throws
+`A request handler for tools/call already exists, which would be overridden`.
 
 ## Testing
 
@@ -59,8 +64,13 @@ literals (`{a: 1}`, not `{ a: 1 }`).
 - **`node --test` does not discover `*.spec.js`** with its default patterns. The npm scripts
   pass the glob `'src/**/*.spec.js'` explicitly; single quotes matter so Node expands it, not
   the shell.
-- **MCP errors reach the client as `McpError`** with the message prefixed `MCP error -32603: `.
-  Assert with `assert.match`, never `assert.equal`.
+- **Tool failures are results, not rejections.** `McpServer` turns anything a tool throws —
+  a validation error, an unknown tool name, a `SubstackAPIException` — into a *successful*
+  `CallToolResult` with `isError: true` and the message in `content[0].text`. `client.callTool()`
+  does **not** reject, so `await client.callTool(...).catch(e => e)` silently yields the result
+  object and every assertion on it passes vacuously. Assert `result.isError` and
+  `result.content[0].text` instead. (Protocol-level failures — an unknown *method*, a malformed
+  request — are still `McpError`, prefixed `MCP error -32601: ` and friends.)
 - **`callTool` results are `JSON.stringify`-ed by the server**, so a handler returning `'OK'`
   arrives as `text: '"OK"'` — quotes included.
 - **`SubstackPost.getDraft()` calls `JSON.stringify` on `draft_body`**, so it must be handed an
@@ -69,16 +79,20 @@ literals (`{a: 1}`, not `{ a: 1 }`).
   non-2xx, so `SubstackApi.handleResponse` is what turns a failing status into an error
   (`SubstackAPIException: <status> <statusText>`); it also serializes the body and sets
   `Content-Type` by hand, which axios used to do implicitly.
-- **JSON Schema comes from zod itself** — `z.toJSONSchema(schema, {target: 'draft-7', io: 'input'})`,
-  no `zod-to-json-schema` dependency. Those two options are not decoration: they mirror what the
-  SDK's own `server/zod-json-schema-compat.js` passes for tool input schemas, so the published
-  schema stays consistent with anything the SDK generates. `io: 'input'` deliberately omits
-  `additionalProperties: false` — a zod object strips unknown keys rather than rejecting them.
-  Do not reintroduce `zod-to-json-schema`: on a zod 4 schema it returns a bare `{$schema}`
-  **without throwing**, which publishes a parameterless tool to every client.
-- **`ZodError` details live on `.issues`, not `.errors`** (zod 4 renamed it). Reading the old
-  name yields `Invalid input: undefined` and silently strips every detail from the error the
-  client sees.
+- **The SDK owns JSON Schema generation** — never convert a schema by hand. `registerTool`
+  publishes `inputSchema` itself, via `z.toJSONSchema(schema, {target: 'draft-7', io: 'input'})`
+  under the hood (`server/zod-json-schema-compat.js`). Two traps if you are tempted to go back
+  to the low-level `Server`: `zod-to-json-schema` returns a bare `{$schema}` for a zod 4 schema
+  **without throwing**, publishing a parameterless tool to every client; and `io: 'input'`
+  omits `additionalProperties: false` on purpose, because a zod object strips unknown keys
+  rather than rejecting them.
+- **zod is not optional and not ours to drop.** It is a non-optional `peerDependency` of the
+  SDK, and `registerTool` throws `inputSchema must be a Zod schema or raw shape` for anything
+  else — the SDK's validation *is* zod. npm auto-installs it even if it leaves `package.json`,
+  so removing the direct dependency buys nothing and unpins the version.
+- **`ZodError` details live on `.issues`, not `.errors`** (zod 4 renamed it). Nothing in `src/`
+  reads them today — the SDK formats the message — but `.errors` silently yields `undefined`
+  rather than failing, so it is worth knowing before writing a handler that inspects them.
 
 ## Verifying the server actually works
 

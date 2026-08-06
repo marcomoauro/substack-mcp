@@ -44,6 +44,9 @@ const parseBody = (body) => {
 };
 
 export const createDraftPostHandler = async (args) => {
+  // McpServer already validated against this schema before dispatching, so over MCP this
+  // parse never rejects. It is kept so the handler stays safe when called directly, which
+  // is how its own tests exercise it.
   const validatedArgs = createDraftPostSchema.parse(args);
 
   const {title, subtitle, body} = validatedArgs;

@@ -119,55 +119,59 @@ describe('MCP server — call_tool', () => {
     }
   });
 
-  test('an unknown tool produces an error', async () => {
+  // McpServer reports tool failures as a successful CallToolResult carrying isError: true,
+  // which is the shape the MCP spec prescribes for execution errors. The three tests below
+  // pinned the previous behaviour, where the hand-written handler threw and the failure
+  // reached the client as a JSON-RPC error instead. `callTool` no longer rejects at all.
+  test('an unknown tool produces an isError result', async () => {
     const {client, close} = await connectMcpClient();
 
     try {
-      const error = await client
-        .callTool({name: 'tool_inesistente', arguments: {}})
-        .catch((e) => e);
+      const result = await client.callTool({name: 'tool_inesistente', arguments: {}});
 
-      assert.match(error.message, /Unknown tool: tool_inesistente/);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /Tool tool_inesistente not found/);
       assert.equal(msw.requests.length, 0);
     } finally {
       await close();
     }
   });
 
-  test('invalid arguments produce an Invalid input error carrying the Zod details', async () => {
+  test('invalid arguments produce an isError result naming every missing field', async () => {
     const {client, close} = await connectMcpClient();
 
     try {
-      const error = await client
-        .callTool({name: 'create_draft_post', arguments: {title: 'title only'}})
-        .catch((e) => e);
+      const result = await client.callTool({
+        name: 'create_draft_post',
+        arguments: {title: 'title only'},
+      });
 
-      assert.match(error.message, /Invalid input:/);
-      assert.match(error.message, /"path":\["subtitle"\]/);
+      assert.equal(result.isError, true);
 
-      // zod 4 renamed ZodError.errors to .issues; reading the old name yielded
-      // `Invalid input: undefined`, stripping every detail from the client-facing message.
-      const details = JSON.parse(error.message.replace(/^.*?Invalid input: /, ''));
-      assert.ok(Array.isArray(details) && details.length > 0, 'details should be a non-empty array');
-      assert.deepEqual(details.map((issue) => issue.path.join('.')).sort(), ['body', 'subtitle']);
+      const [{text}] = result.content;
+      assert.match(text, /Input validation error/);
+      // Both missing fields must be reported, not just the first one: a client that only
+      // learns about `subtitle` retries and fails again on `body`.
+      assert.match(text, /subtitle/);
+      assert.match(text, /body/);
 
+      // The handler must not run, so no draft is created from invalid input.
       assert.equal(msw.requests.length, 0);
     } finally {
       await close();
     }
   });
 
-  test('a Substack API error propagates to the client', async () => {
+  test('a Substack API error reaches the client as an isError result', async () => {
     msw.server.use(msw.draftsHandler(() => new HttpResponse('boom', {status: 500})));
 
     const {client, close} = await connectMcpClient();
 
     try {
-      const error = await client
-        .callTool({name: 'create_draft_post', arguments: VALID_ARGS})
-        .catch((e) => e);
+      const result = await client.callTool({name: 'create_draft_post', arguments: VALID_ARGS});
 
-      assert.match(error.message, /500/);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /SubstackAPIException: 500/);
     } finally {
       await close();
     }
