@@ -92,6 +92,32 @@ This option requires Docker to be installed on your system.
 
 2. Replace `<SUBSTACK_PUBLICATION_URL>`, `<YOUR_SESSION_TOKEN>` and `<YOUR_USER_ID>` with your credentials.
 
+### 🪵 Logs
+
+The server logs what it does as one JSON object per line, on **stderr** — MCP clients collect it
+into their own log file (on macOS, Claude Desktop writes it to
+`~/Library/Logs/Claude/mcp-server-substack-api.log`). It is the fastest way to see what your LLM
+actually sent when a call does not do what you expected:
+
+```json
+{"ts":"2026-08-07T10:12:03.114Z","level":"info","msg":"tool.call.start","tool":"create_draft_post","args":{"title":"My title","subtitle":"My subtitle","body":"…"}}
+{"ts":"2026-08-07T10:12:03.402Z","level":"info","msg":"substack.response","status":200,"duration_ms":287}
+{"ts":"2026-08-07T10:12:03.403Z","level":"info","msg":"create_draft_post.created","draft_id":167712345}
+```
+
+Set the optional `SUBSTACK_MCP_LOG_LEVEL` env var alongside your credentials to change how much
+is written:
+
+| Value | What you get |
+|---|---|
+| `silent` | nothing |
+| `error` | failed calls only |
+| `warn` | the above, plus calls the server rejected (bad arguments) |
+| `info` *(default)* | the above, plus every tool call, request and response |
+| `debug` | the above, plus full payloads and every JSON-RPC message |
+
+Your session token is never written to the log, at any level.
+
 ## 💻 Popular Clients that supports MCPs
 
 > For a complete list of MCP clients and their feature support, visit the [official MCP clients page](https://modelcontextprotocol.io/clients).

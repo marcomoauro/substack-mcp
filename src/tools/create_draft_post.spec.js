@@ -5,6 +5,7 @@ import {HttpResponse} from 'msw';
 import {createDraftPostHandler, createDraftPostSchema} from './create_draft_post.js';
 import {createMswServer, DRAFTS_URL} from '../../test/helpers/msw-server.js';
 import {setTestEnv} from '../../test/helpers/env.js';
+import {captureLogs} from '../../test/helpers/capture-logs.js';
 
 const msw = createMswServer();
 let restoreEnv;
@@ -161,6 +162,75 @@ describe('createDraftPostHandler — body conversion', () => {
 
   test('an empty string produces a document with no content', async () => {
     assert.deepEqual(await sendAndDecode(''), {type: 'doc', content: []});
+  });
+});
+
+describe('createDraftPostHandler — logging', () => {
+  function find(lines, msg) {
+    const line = lines.find((entry) => entry.msg === msg);
+    assert.ok(line, `expected a ${msg} log line, got: ${lines.map((l) => l.msg).join(', ')}`);
+    return line;
+  }
+
+  test('records how the body was interpreted', async () => {
+    const lines = await captureLogs(() => createDraftPostHandler(VALID_ARGS));
+
+    const parsed = find(lines, 'draft.body.parsed');
+    assert.equal(parsed.format, 'text');
+    assert.equal(parsed.nodes, 1);
+  });
+
+  test('distinguishes a document that arrived as JSON from text', async () => {
+    const body = JSON.stringify({type: 'doc', content: [{type: 'paragraph'}, {type: 'paragraph'}]});
+    const lines = await captureLogs(() => createDraftPostHandler({...VALID_ARGS, body}));
+
+    const parsed = find(lines, 'draft.body.parsed');
+    assert.equal(parsed.format, 'prosemirror');
+    assert.equal(parsed.nodes, 2);
+  });
+
+  // The reason a model's document silently became two paragraphs of literal JSON. Nothing else
+  // reports it: the draft is created either way and the tool answers OK.
+  test('flags JSON that was not a document, so a silent downgrade is visible', async () => {
+    const lines = await captureLogs(() => createDraftPostHandler({...VALID_ARGS, body: '{"a":1}'}));
+
+    assert.deepEqual(find(lines, 'draft.body.json_is_not_a_document').parsed, {a: 1});
+  });
+
+  test('records the outgoing request with the session cookie redacted', async () => {
+    const lines = await captureLogs(() => createDraftPostHandler(VALID_ARGS));
+
+    const request = find(lines, 'substack.request');
+    assert.equal(request.url, DRAFTS_URL);
+    assert.equal(request.method, 'POST');
+    assert.equal(request.headers.Cookie, '***');
+    assert.equal(request.body.draft_title, 'My title');
+
+    const response = find(lines, 'substack.response');
+    assert.equal(response.status, 200);
+    assert.equal(typeof response.duration_ms, 'number');
+
+    assert.equal(find(lines, 'create_draft_post.created').draft_id, 167712345);
+  });
+
+  // The thrown message carries only the status. Substack explains the refusal in the body, and
+  // this is the only place it survives.
+  test('records the body of a failed response, which the error message drops', async () => {
+    msw.server.use(msw.draftsHandler(() => new HttpResponse('boom', {status: 500})));
+
+    const lines = await captureLogs(
+      () => createDraftPostHandler(VALID_ARGS).catch(() => {})
+    );
+
+    const failure = find(lines, 'substack.response.error');
+    assert.equal(failure.status, 500);
+    assert.equal(failure.body, 'boom');
+  });
+
+  test('says nothing at all when logging is silenced', async () => {
+    const lines = await captureLogs(() => createDraftPostHandler(VALID_ARGS), {level: 'silent'});
+
+    assert.deepEqual(lines, []);
   });
 });
 
