@@ -58,12 +58,17 @@ describe('createDraftPostHandler — successo', () => {
     assert.equal(body.draft_section_id, null);
   });
 
-  // CARATTERIZZAZIONE — l'handler passa una stringa a setBody, quindi getDraft applica
-  // JSON.stringify a una stringa: draft_body arriva a Substack doppiamente serializzato.
-  test('draft_body arriva doppiamente serializzato', async () => {
+  // Prima del fix al doppio encoding l'handler passava la stringa grezza a setBody, e
+  // getDraft le applicava JSON.stringify: draft_body arrivava come '"Il corpo"', che
+  // l'editor Substack non sa interpretare come documento. Ora parseBody costruisce il
+  // documento prima di setBody, quindi draft_body è la serializzazione di un doc valido.
+  test('draft_body arriva come documento ProseMirror serializzato', async () => {
     await createDraftPostHandler(VALID_ARGS);
 
-    assert.equal(msw.requests[0].body.draft_body, '"Il corpo"');
+    assert.deepEqual(JSON.parse(msw.requests[0].body.draft_body), {
+      type: 'doc',
+      content: [{type: 'paragraph', content: [{type: 'text', text: 'Il corpo'}]}],
+    });
   });
 
   test('autentica con il token preso dalle env var', async () => {
@@ -85,6 +90,77 @@ describe('createDraftPostHandler — successo', () => {
     } finally {
       process.env.SUBSTACK_USER_ID = previous;
     }
+  });
+});
+
+describe('createDraftPostHandler — conversione del body', () => {
+  // parseBody non è esportata, quindi la si esercita attraverso l'handler osservando il
+  // draft_body effettivamente inviato.
+  async function inviaEDecodifica(body) {
+    await createDraftPostHandler({...VALID_ARGS, body});
+    return JSON.parse(msw.requests.at(-1).body.draft_body);
+  }
+
+  function testiDeiParagrafi(doc) {
+    return doc.content.map((paragraph) => paragraph.content[0].text);
+  }
+
+  test('il testo semplice diventa un singolo paragrafo', async () => {
+    const doc = await inviaEDecodifica('Una riga sola');
+
+    assert.deepEqual(doc, {
+      type: 'doc',
+      content: [{type: 'paragraph', content: [{type: 'text', text: 'Una riga sola'}]}],
+    });
+  });
+
+  test('i paragrafi separati da una riga vuota diventano nodi distinti', async () => {
+    const doc = await inviaEDecodifica('Primo paragrafo\n\nSecondo paragrafo');
+
+    assert.deepEqual(testiDeiParagrafi(doc), ['Primo paragrafo', 'Secondo paragrafo']);
+  });
+
+  // Lo split è su /\n+/, quindi ogni interruzione di riga apre un paragrafo: un testo a
+  // capo singolo non resta un paragrafo unico. La descrizione della PR parla di "blank
+  // lines", ma il comportamento reale è questo.
+  test('anche un a capo singolo apre un nuovo paragrafo', async () => {
+    const doc = await inviaEDecodifica('Riga uno\nRiga due');
+
+    assert.deepEqual(testiDeiParagrafi(doc), ['Riga uno', 'Riga due']);
+  });
+
+  test('le righe vuote in eccesso non producono paragrafi vuoti', async () => {
+    const doc = await inviaEDecodifica('\n\nPrimo\n\n\n\nSecondo\n\n');
+
+    assert.deepEqual(testiDeiParagrafi(doc), ['Primo', 'Secondo']);
+  });
+
+  test('un documento ProseMirror in JSON viene passato intatto', async () => {
+    const documento = {
+      type: 'doc',
+      content: [
+        {type: 'heading', attrs: {level: 2}, content: [{type: 'text', text: 'Titolo'}]},
+        {type: 'paragraph', content: [{type: 'text', text: 'Corpo'}]},
+      ],
+    };
+
+    assert.deepEqual(await inviaEDecodifica(JSON.stringify(documento)), documento);
+  });
+
+  test('un JSON valido che non è un documento viene trattato come testo', async () => {
+    const doc = await inviaEDecodifica('{"a":1}');
+
+    assert.deepEqual(testiDeiParagrafi(doc), ['{"a":1}']);
+  });
+
+  test('un JSON malformato viene trattato come testo', async () => {
+    const doc = await inviaEDecodifica('{non valido');
+
+    assert.deepEqual(testiDeiParagrafi(doc), ['{non valido']);
+  });
+
+  test('una stringa vuota produce un documento senza contenuto', async () => {
+    assert.deepEqual(await inviaEDecodifica(''), {type: 'doc', content: []});
   });
 });
 
