@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-MCP server exposing Substack automation to LLM clients. Node 22 (`.nvmrc`), ESM, npm.
+MCP server exposing Substack automation to LLM clients. ESM, npm. Development and CI run on
+Node 22 (`.nvmrc`, `Dockerfile`); `engines` declares `>=18`, the floor imposed by native
+`fetch` — do not use APIs newer than that in `src/`.
 
 ## Language
 
