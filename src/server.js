@@ -7,6 +7,23 @@ import {getDraftSchema, getDraftHandler} from "./tools/get_draft.js";
 import {getPublicationStatsSchema, getPublicationStatsHandler} from "./tools/get_publication_stats.js";
 import {getAnalyticsSchema, getAnalyticsHandler} from "./tools/get_analytics.js";
 import {getPostStatsSchema, getPostStatsHandler} from "./tools/get_post_stats.js";
+import {updateDraftSchema, updateDraftHandler} from "./tools/update_draft.js";
+import {deleteDraftSchema, deleteDraftHandler} from "./tools/delete_draft.js";
+import {publishDraftSchema, publishDraftHandler} from "./tools/publish_draft.js";
+import {getPublicationSchema, getPublicationHandler} from "./tools/get_publication.js";
+import {getUserProfileSchema, getUserProfileHandler} from "./tools/get_user_profile.js";
+import {listPublicationTagsSchema, listPublicationTagsHandler} from "./tools/list_publication_tags.js";
+import {getPostTagsSchema, getPostTagsHandler} from "./tools/get_post_tags.js";
+import {addTagToPostSchema, addTagToPostHandler} from "./tools/add_tag_to_post.js";
+import {getPostCommentsSchema, getPostCommentsHandler} from "./tools/get_post_comments.js";
+import {commentOnPostSchema, commentOnPostHandler} from "./tools/comment_on_post.js";
+import {listSubscriptionsSchema, listSubscriptionsHandler} from "./tools/list_subscriptions.js";
+import {listReaderPostsSchema, listReaderPostsHandler} from "./tools/list_reader_posts.js";
+import {getReaderPostSchema, getReaderPostHandler} from "./tools/get_reader_post.js";
+import {getReaderFeedSchema, getReaderFeedHandler} from "./tools/get_reader_feed.js";
+import {getProfileFeedSchema, getProfileFeedHandler} from "./tools/get_profile_feed.js";
+import {getCommentThreadSchema, getCommentThreadHandler} from "./tools/get_comment_thread.js";
+import {restackItemSchema, restackItemHandler} from "./tools/restack_item.js";
 import {logger} from "./logger.js";
 
 export const tools = {
@@ -56,6 +73,140 @@ export const tools = {
       "audience and email settings. Take the id from list_posts or create_draft_post.",
     schema: getDraftSchema,
     handler: getDraftHandler,
+  },
+  update_draft: {
+    description:
+      "Change the title, subtitle or audience of an existing draft. The update is partial: only the " +
+      "fields you pass change, everything else — including the body — is left alone. Take the id " +
+      "from list_posts or create_draft_post.",
+    schema: updateDraftSchema,
+    handler: updateDraftHandler,
+  },
+  publish_draft: {
+    description:
+      "Publish a draft. The post goes live on the web; `send` additionally emails it to subscribers " +
+      "and defaults to false, because an email cannot be recalled. Publishing cannot be undone from " +
+      "this server — there is no unpublish tool.",
+    schema: publishDraftSchema,
+    handler: publishDraftHandler,
+  },
+  delete_draft: {
+    description:
+      "Delete an unpublished draft. Refuses if the id belongs to a published post: Substack deletes " +
+      "both through the same endpoint, and removing a live post is irreversible, so that is left to " +
+      "the dashboard.",
+    schema: deleteDraftSchema,
+    handler: deleteDraftHandler,
+  },
+  get_publication: {
+    description:
+      "Read the settings and identity of your Substack publication: name, subdomain, custom domain, " +
+      "hero text, copyright, sender name, logo, plans and payment state. Returns a projection by " +
+      "default; pass full: true for all 111 fields.",
+    schema: getPublicationSchema,
+    handler: getPublicationHandler,
+  },
+  get_user_profile: {
+    description:
+      "Read the account behind the session: id, handle, name, bio, and every publication you have a " +
+      "role on. This is how to discover which publications the session can reach, beyond the one " +
+      "SUBSTACK_PUBLICATION_URL points at.",
+    schema: getUserProfileSchema,
+    handler: getUserProfileHandler,
+  },
+  list_publication_tags: {
+    description:
+      "List every tag defined on your Substack publication, with its name, slug and whether it is " +
+      "hidden. Tag ids are UUIDs, so this is how to find one — though add_tag_to_post takes a name " +
+      "and does not need it.",
+    schema: listPublicationTagsSchema,
+    handler: listPublicationTagsHandler,
+  },
+  get_post_tags: {
+    description:
+      "List the tags on one post, by name. The underlying endpoint returns only UUIDs, so this " +
+      "resolves them against the publication's tag list — it is the only way to read back what " +
+      "add_tag_to_post did, since neither get_draft nor list_posts carries tags.",
+    schema: getPostTagsSchema,
+    handler: getPostTagsHandler,
+  },
+  add_tag_to_post: {
+    description:
+      "Add a tag to a post, by tag name, creating the tag on the publication if it does not exist " +
+      "yet. Works on drafts as well as published posts. Reports `already_tagged` rather than failing " +
+      "when the post already carries the tag.",
+    schema: addTagToPostSchema,
+    handler: addTagToPostHandler,
+  },
+  get_post_comments: {
+    description:
+      "Read the comments on one of your posts, each with its author, text, reaction and reply " +
+      "counts, and its position in the thread. Comments withheld by Substack's automod are counted " +
+      "separately under automod_hidden_count rather than mixed in.",
+    schema: getPostCommentsSchema,
+    handler: getPostCommentsHandler,
+  },
+  comment_on_post: {
+    description:
+      "Post a public comment on one of your posts, as you. This is published under your name and " +
+      "this server offers no way to delete it.",
+    schema: commentOnPostSchema,
+    handler: commentOnPostHandler,
+  },
+  // The tools below read substack.com rather than the publication: they are about the account as a
+  // *reader* — what it subscribes to, what is in its inbox, what is in its feed — rather than about
+  // the publication it administers. Different host, different id space, genuinely different surface.
+  list_subscriptions: {
+    description:
+      "List the Substack publications this account subscribes to, with the plan, membership state " +
+      "and whether emails are on. Excludes paused and expired subscriptions unless asked otherwise. " +
+      "This is what the account reads, not who reads it — for your own subscribers use list_subscribers.",
+    schema: listSubscriptionsSchema,
+    handler: listSubscriptionsHandler,
+  },
+  list_reader_posts: {
+    description:
+      "List recent posts from the publications this account subscribes to — the reader Inbox — with " +
+      "read state and reading progress. Each post is summarised; use get_reader_post to read one.",
+    schema: listReaderPostsSchema,
+    handler: listReaderPostsHandler,
+  },
+  get_reader_post: {
+    description:
+      "Read one post in full, from any publication — not just your own. Returns the body as HTML " +
+      "along with its author, stats and audience. This is the only way to read the text of someone " +
+      "else's post.",
+    schema: getReaderPostSchema,
+    handler: getReaderPostHandler,
+  },
+  get_reader_feed: {
+    description:
+      "Read the Substack Notes feed: Notes and posts surfaced to this account. Pick the feed with " +
+      "`tab` ('for-you' or 'subscribed'), and set include_tabs to discover the ids available.",
+    schema: getReaderFeedSchema,
+    handler: getReaderFeedHandler,
+  },
+  get_profile_feed: {
+    description:
+      "Read what one account has published — its Notes, its posts, or both. Defaults to your own " +
+      "account, so this is how to list the Notes you have written; pass user_id for anyone else.",
+    schema: getProfileFeedSchema,
+    handler: getProfileFeedHandler,
+  },
+  get_comment_thread: {
+    description:
+      "Read one Note or comment together with the replies beneath it, each with its author and its " +
+      "position in the thread. Take the id from get_reader_feed or get_profile_feed.",
+    schema: getCommentThreadSchema,
+    handler: getCommentThreadHandler,
+  },
+  restack_item: {
+    description:
+      "Restack a Note to your own followers. This is public, appears on your profile, and cannot be " +
+      "undone from here — a restack has no id of its own, so there is nothing to delete. Notes only: " +
+      "restacking a post is not supported, because that endpoint 404s even on a valid post id.",
+    schema: restackItemSchema,
+    handler: restackItemHandler,
   },
   get_publication_stats: {
     description:

@@ -162,6 +162,124 @@ default per status rather than letting the server choose. Free-text search is `q
 one must never be serialized — `query=null` searches for the literal string. `GET /api/v1/drafts/:id`
 returns a single draft whole.
 
+**The draft lifecycle is four verbs on one path.** `POST /drafts`, `PUT /drafts/:id`,
+`POST /drafts/:id/publish`, `DELETE /drafts/:id` — all verified except publish, which cannot be
+confirmed without making something public. Two things follow from `DELETE` being shared with
+published posts:
+
+**Publishing: the email flag is on the draft, not only in the request.** The bundle builds the call as
+`post('/api/v1/drafts/' + id + '/publish').send({send: true, only_send: true})` — so the path and the
+`send` key are real, and `only_send` means "email an already-published post without republishing it".
+Two traps around it:
+
+- **`share_automatically` does not exist.** It appears **zero** times in the bundle; the fork sent it.
+  An unexpected parameter is a 400 on several of this API's endpoints, so an invented key is not free.
+- **`should_send_email` on the draft is where the dashboard keeps the decision** — its serializer
+  computes `dontSendEmail: !!email_sent_at || !should_send_email` — and it is **`true` by default** on
+  a real draft. Whether the initial publish honours a body `send` or reads that field cannot be
+  determined without publishing, and the ambiguity is dangerous in one direction only: a body `send`
+  that turns out to be ignored mails the entire list. `publish_draft` therefore PUTs the intent to the
+  draft *first* and passes `send` as well, so both possible behaviours agree. A failing PUT aborts —
+  publishing after the intent failed to save is the scenario the write exists to prevent. it removes a live post just as readily, so `delete_draft` spends a read to refuse an
+`is_published` target rather than exposing that reach behind a draft-shaped name. And `PUT` is
+genuinely partial — a body carrying only `draft_title` changed that and preserved the body — so an
+absent key must never be sent as null.
+
+**There are two hosts, and they are not interchangeable.** The publisher surface is on the
+publication and keyed by publication id; *your profile, your subscriptions, the reader inbox, the
+Notes feed and comment threads* are on `substack.com/api/v1` and keyed by **user** id. Each answers
+404 for the other's paths, which is why `SubstackApi.requestGlobal` exists as a sibling of `request`
+rather than callers concatenating a base — the choice of host is part of the endpoint.
+
+**The tag surface is `/publication/post-tag`, and `/post_tags` is a 404.** GET lists and POST creates
+on the same path; `/post-tag/:uuid` is one tag and `/post-tag/settings` adds `navigationBarItem`.
+Three measured traps:
+
+- **Tag ids are UUIDs**, the only ids in this API that are not integers. A schema typed `z.number()`
+  fails on contact.
+- **`GET /post/:postId/tag` answers join rows** — `{id, publication_id, post_id, post_tag_id}` — with
+  **no name and no slug**, and neither `GET /drafts/:id` nor `post_management/*` carries tags at all.
+  So reading a post's tags means joining against the tag list; handed over raw it is a list of UUIDs
+  the caller cannot interpret. Note `id` there is the *association's* own UUID, not the tag's.
+- **Attaching a tag twice answers 400**, naming neither the post nor the tag, and the count does not
+  change. `add_tag_to_post` checks first so the answer is `already_tagged` rather than a bare 400.
+
+**Comments and Notes are the same entity**, which is why `src/api/substack/comment.js` serves both:
+a Note is a comment with `type: 'feed'` and no `post_id`. Three of its fields are wrong by analogy
+with the rest of this API, and were wrong in the fork this was ported from:
+
+- The author is **flat** — `name`, `handle`, `photo_url` on the comment. There is no nested `user`.
+- Replies are **`children_count`**. There is no `children` array to take `.length` of.
+- There is **no `parent_id`**. Hierarchy is `ancestor_path`, a **dot-separated** chain of ancestor
+  ids, root-first, empty at the top — verified at three depths: `''`, `'309007328'`,
+  `'309007328.309403526'`. The parent is therefore the **last** segment. Reading the first names the
+  thread root as every nested reply's parent, which is wrong only once a thread is three deep and
+  silently correct before that.
+
+`/post/:id/comments` answers `{comments, automod_hidden_comments}`; the second array is what automod
+withheld and never appears in the first, so merging or dropping it turns "held" into "nobody
+commented".
+
+**There is a *second* comment shape, and it is the one you get back from writing.** `POST
+/post/:id/comment` answers with the comment directly — no envelope — but carrying `children` (an
+array) and `reactions` (an object) instead of `children_count` and `reaction_count`. Both paths run
+through the same `summarizeComment`, so it reads the counts and falls back to the collections.
+Verified alongside it: **`DELETE /api/v1/comment/:id` answers 200** and the comment leaves the post,
+which is why `comment_on_post` is a write this server is willing to make.
+
+**A restack, by contrast, cannot be undone.** `POST /restack/feed` is real and verified, and three
+things about it were measured the hard way:
+
+- **The body keys are camelCase** — `commentId`, `tabId` — unlike almost everything else here.
+  Confirmed by elimination: `{post_id, tab_id}` answers `400 "Devi fornire postId o commentId"`, the
+  API naming the keys it wanted.
+- **Restacking a post does not work through it.** `{postId, tabId}` answers
+  `404 "Post da Restack non trovato"` for a published post on the caller's own publication, so
+  whatever that path needs is not an id from `list_posts`. `restack_item` therefore takes only a Note.
+- **A restack has no id of its own.** It surfaces the *original* Note with `context: comment_restack`
+  in the profile feed, so `DELETE /comment/:id` would target someone else's Note rather than the
+  restack. Un-restacking is a UI toggle with no endpoint found in a full sweep of all 109 scripts on
+  `substack.com` — `restack/feed` appears there exactly once, and only as the create path.
+
+**Three endpoints return heterogeneous arrays, and only some entries carry content.** This is the
+same silent-drop family as `columnView` and the export's columns, seen from the other side — here the
+hazard is mapping straight through and *inventing* empty entries:
+
+- `/subscriptions/all/v2` → `subscription`, `label` (a section header like "Paid"), `add_more`.
+- `/reader/feed` and `/reader/feed/profile/:userId` → `comment` (a Note), `post`, `userSuggestions`.
+
+Filter on the type, not on whether a field happens to be present: today's `label` has no `pub`, so a
+presence check appears to work and stops working the moment Substack adds a type that carries one.
+
+**Four more facts about the reader surface, each measured:**
+
+- **`paused` is `null`, not `false`**, when a subscription is not paused, and a *free* subscription
+  carries an `expiry` in the year 2121. So `paused === false` drops every active subscription, and a
+  present expiry is not evidence of a paid term.
+- **`/reader/posts` pages by `after`, a timestamp**, taken from the last `inboxItems` entry's
+  `content_date`. Its own top-level `cursor` is always null.
+- **Feed tab `name`s are localized** — they came back in Italian — so a tab is selected by `id`.
+- **The Inbox and the feed attach `body_html` and `body_json` to every post.** An unprojected page of
+  20 runs to hundreds of KB. Listings carry `truncated_body_text`; `/posts/by-id/:id` is how to read
+  one in full, and it is the only endpoint that returns another publication's body.
+
+`get_reader_post` leaves that body as **HTML** rather than converting it. Markdown would mean a new
+dependency or a regex pass over markup, and a regex HTML converter mangles nested lists and embeds
+*silently* — the same argument as `csv.js` reaching the opposite conclusion, because HTML is not a
+bounded grammar and CSV is. An LLM reads HTML perfectly well.
+
+**Deliberately not implemented, and why**, so it is not re-litigated: `create_note` and
+`reply_to_note` need `playwright-extra` plus a stealth plugin to obtain a `cf_clearance` cookie and
+get past Cloudflare bot management on `POST /comment/feed`. That is three heavy dependencies, a
+browser download, a broken Docker image, and a technique that breaks on Cloudflare's next change.
+Also skipped: `update_payment_settings` (paywall pricing from an LLM), deleting *published* posts,
+and a hand-maintained `list_resources` catalog — a second tool list that can drift from `tools/list`.
+
+**Writes log their intent at `info` *before* the request**, not only their outcome —
+`publish_draft.publishing`, `comment_on_post.posting`, `restack_item.restacking`, with the full text
+where there is one. Nothing in this server can unpublish, delete a comment or undo a restack, so that
+line is the only record that it happened.
+
 ## Logging
 
 **Everything must be logged well enough to debug a session from the log alone**, because the

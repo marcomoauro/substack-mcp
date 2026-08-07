@@ -77,6 +77,19 @@ export default class SubstackApi {
   }
 
   /**
+   * The same as `request`, but against `substack.com/api/v1` instead of the publication host.
+   *
+   * Substack splits its API across two hosts and the split is not cosmetic: the publisher surface
+   * (drafts, subscribers, stats) lives on the publication, while everything about *you as a
+   * person* — your profile, your subscriptions, the reader feed, Notes and comment threads — lives
+   * on substack.com and is keyed by user id rather than publication id. Calling one on the other's
+   * host answers 404, so which base a method uses is part of the endpoint, not a detail.
+   */
+  async requestGlobal({method, path, ...options}) {
+    return this.requestUrl({url: `${this.base_url}${path}`, method, ...options});
+  }
+
+  /**
    * The same as `request`, but taking an absolute url.
    *
    * Needed because the subscriber export answers with a url relative to the publication *host*
@@ -173,6 +186,275 @@ export default class SubstackApi {
 
   async getDraft(draft_id) {
     return this.request({method: 'GET', path: `/drafts/${draft_id}`, referer: '/publish/post'});
+  }
+
+  /**
+   * Applies a partial update to a draft: only the keys present in `body` change, the rest are left
+   * as they are. Verified against the live API — a PUT carrying nothing but `draft_title` and
+   * `draft_subtitle` updated exactly those two and preserved the body.
+   */
+  async updateDraft(draft_id, body) {
+    return this.request({
+      method: 'PUT',
+      path: `/drafts/${draft_id}`,
+      body,
+      referer: '/publish/post',
+    });
+  }
+
+  /**
+   * Deletes a draft. The endpoint is shared with published posts — the same DELETE removes one —
+   * which is why `delete_draft` refuses an `is_published` target rather than exposing that reach.
+   */
+  async deleteDraft(draft_id) {
+    return this.request({
+      method: 'DELETE',
+      path: `/drafts/${draft_id}`,
+      referer: '/publish/posts',
+    });
+  }
+
+  /**
+   * Publishes a draft. `send` controls whether subscribers get the email — the irreversible half of
+   * the operation, since an email cannot be recalled once out.
+   *
+   * The request is UNVERIFIED (confirming it means publishing something real), but the path and the
+   * `send` key are not guesses: the dashboard bundle builds this exact call as
+   * `post('/api/v1/drafts/' + id + '/publish').send({send: true, only_send: true})`, where
+   * `only_send` means "email an already-published post without republishing it".
+   *
+   * `share_automatically` — which the fork this was ported from sent — appears **zero** times in that
+   * bundle and is not sent here. An unexpected parameter is a 400 on several of this API's endpoints,
+   * so an invented key risks breaking the call outright.
+   *
+   * Whether the *initial* publish honours a body `send` or reads the draft's own
+   * `should_send_email` could not be determined without publishing, and that ambiguity is dangerous
+   * in one direction only: `should_send_email` is `true` by default on a real draft, so a body `send`
+   * that turns out to be ignored would mail the whole list. `publish_draft` therefore writes the
+   * intent to the draft first and passes `send` as well — see the tool.
+   */
+  async publishDraft(draft_id, {send = true} = {}) {
+    return this.request({
+      method: 'POST',
+      path: `/drafts/${draft_id}/publish`,
+      body: {send},
+      referer: '/publish/post',
+    });
+  }
+
+  async getPublication() {
+    return this.request({method: 'GET', path: '/publication', referer: '/publish/settings'});
+  }
+
+  /**
+   * Every tag defined on the publication, as `{id, publication_id, name, slug, hidden}`.
+   *
+   * The path is `/publication/post-tag`, not `/post_tags` — that one answers 404. GET lists and POST
+   * creates on the same path. Note the id is a **UUID string**, not an integer like every other id
+   * in this API, which is what makes `add_tag_to_post` take a name rather than an id.
+   */
+  async getPostTags() {
+    return this.request({
+      method: 'GET',
+      path: '/publication/post-tag',
+      referer: '/publish/settings',
+    });
+  }
+
+  /**
+   * The tags currently on one post. Neither `GET /drafts/:id` nor `post_management/*` carries them —
+   * verified — so this is the only way to read back what `addTagToPost` did.
+   */
+  async getTagsForPost(post_id) {
+    return this.request({
+      method: 'GET',
+      path: `/post/${post_id}/tag`,
+      referer: '/publish/post',
+    });
+  }
+
+  /**
+   * Creates a tag on the publication. UNVERIFIED: the path is confirmed by the GET above answering
+   * on it, but firing the POST would leave a tag behind on a real publication.
+   */
+  async createPostTag(name) {
+    return this.request({
+      method: 'POST',
+      path: '/publication/post-tag',
+      body: {name},
+      referer: '/publish/settings',
+    });
+  }
+
+  /**
+   * Attaches an existing tag to a post. Verified: answers with the join row —
+   * `{publication_id, post_id, post_tag_id, id}` — where `id` is the association's own UUID, distinct
+   * from `post_tag_id`. Works on drafts as well as published posts.
+   */
+  async addTagToPost(post_id, post_tag_id) {
+    return this.request({
+      method: 'POST',
+      path: `/post/${post_id}/tag/${post_tag_id}`,
+      referer: '/publish/post',
+    });
+  }
+
+  /**
+   * One page of the accounts you subscribe to, on substack.com.
+   *
+   * `items` is **heterogeneous**: alongside `type: 'subscription'` it carries `type: 'label'`
+   * (section headers like "Paid") and `type: 'add_more'` (a UI affordance). Treating the array as a
+   * list of subscriptions yields entries with no publication at all, so the caller must filter.
+   */
+  async listSubscriptions({cursor = null, limit = 100} = {}) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: '/subscriptions/all/v2',
+      params: {limit, cursor},
+      referer: '/',
+    });
+  }
+
+  /**
+   * The reader Inbox: recent posts from the publications you subscribe to.
+   *
+   * Paging is not a cursor — the top-level `cursor` is null. It is `after`, and the value comes from
+   * the last entry of `inboxItems`, whose `content_date` is the timestamp to resume from.
+   */
+  async listReaderPosts({limit = 20, after = null} = {}) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: '/reader/posts',
+      params: {limit, after},
+      referer: '/inbox',
+    });
+  }
+
+  /**
+   * One post by id, from any publication — answers `{post, publication, publicationSettings}`.
+   *
+   * This is the only endpoint that returns the *body* of someone else's post. Verified against a
+   * live post: `post.body_html` came back complete at ~22 KB.
+   */
+  async getPostById(post_id) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: `/posts/by-id/${post_id}`,
+      referer: '/inbox',
+    });
+  }
+
+  /** The Notes/posts feed. `tab` is an id from `getReaderFeedTabs`, e.g. 'for-you' or 'subscribed'. */
+  async getReaderFeed({tab = 'for-you', cursor = null, limit = 20} = {}) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: '/reader/feed',
+      params: {tab, cursor, limit},
+      referer: '/notes',
+    });
+  }
+
+  /**
+   * The available feed tabs. Note the `name` of each is **localized** to the account's language —
+   * observed coming back in Italian — so a tab must be selected by `id`, never by name.
+   */
+  async getReaderFeedTabs() {
+    return this.requestGlobal({method: 'GET', path: '/reader/feed/tabs', referer: '/notes'});
+  }
+
+  /** One user's own feed: the Notes they wrote and the posts they published. */
+  async getProfileFeed(user_id, {cursor = null, limit = 20} = {}) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: `/reader/feed/profile/${user_id}`,
+      params: {cursor, limit},
+      referer: '/profile',
+    });
+  }
+
+  /** One Note or comment, as `{item}`. */
+  async getComment(comment_id) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: `/reader/comment/${comment_id}`,
+      referer: '/notes',
+    });
+  }
+
+  /**
+   * The reply branches under a Note or comment, as
+   * `{rootComment, commentBranches, moreBranches, nextCursor}`.
+   */
+  async getCommentReplies(comment_id, {cursor = null} = {}) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: `/reader/comment/${comment_id}/replies`,
+      params: {cursor},
+      referer: '/notes',
+    });
+  }
+
+  /**
+   * Restacks a Note to your own followers. Verified against the live API.
+   *
+   * The body keys are **camelCase**, unlike almost everything else this class sends. Confirmed by
+   * elimination rather than by reading the bundle: `{post_id, tab_id}` answers
+   * `400 "Devi fornire postId o commentId"` — the API naming the keys it wanted.
+   *
+   * Restacking a *post* is deliberately not offered. `{postId, tabId}` answers
+   * `404 "Post da Restack non trovato"` even for a published post on the caller's own publication, so
+   * whatever that path needs is not a post id from `list_posts`. A parameter that 404s on a valid id
+   * is worse than an absent one: it reads as the post being gone.
+   *
+   * There is no undo. A restack has no id of its own — it surfaces the original Note with
+   * `context: comment_restack` — so it cannot be removed with `DELETE /comment/:id`, which would
+   * target someone else's Note. Un-restacking is a UI action this server does not expose.
+   */
+  async restackNote(comment_id, {tab_id = 'for-you'} = {}) {
+    return this.requestGlobal({
+      method: 'POST',
+      path: '/restack/feed',
+      body: {commentId: Number(comment_id), tabId: tab_id},
+      referer: '/notes',
+    });
+  }
+
+  /**
+   * The comments on one of your posts. Answers `{comments, automod_hidden_comments}` — the second
+   * array is the ones Substack's automod withheld, which never appear in the first.
+   */
+  async getPostComments(post_id, {limit = 50} = {}) {
+    return this.request({
+      method: 'GET',
+      path: `/post/${post_id}/comments`,
+      params: {limit},
+      referer: '/publish/post',
+    });
+  }
+
+  /**
+   * Posts a comment on one of your posts, as you. Verified end to end against the live API, including
+   * removal: `DELETE /api/v1/comment/:id` answers 200 and the comment is gone from the post.
+   *
+   * The response is the comment itself, not an envelope — but in a *different* shape from the one
+   * reads return: it carries `children` (an array) and `reactions` (an object) rather than
+   * `children_count` and `reaction_count`. `summarizeComment` handles both.
+   */
+  async commentOnPost(post_id, body) {
+    return this.request({
+      method: 'POST',
+      path: `/post/${post_id}/comment`,
+      body: {body},
+      referer: '/publish/post',
+    });
+  }
+
+  /**
+   * Your own account, on substack.com rather than the publication: id, handle, bio, and the
+   * `publicationUsers` list that names every publication you have a role on.
+   */
+  async getUserProfile() {
+    return this.requestGlobal({method: 'GET', path: '/user/profile/self', referer: '/'});
   }
 
   /**

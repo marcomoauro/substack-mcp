@@ -38,14 +38,31 @@ describe('MCP server — list_tools', () => {
   }
 
   const EXPECTED_TOOLS = [
+    'add_tag_to_post',
+    'comment_on_post',
     'create_draft_post',
+    'delete_draft',
     'export_subscribers',
     'get_analytics',
+    'get_comment_thread',
     'get_draft',
+    'get_post_comments',
     'get_post_stats',
+    'get_post_tags',
+    'get_profile_feed',
+    'get_publication',
     'get_publication_stats',
+    'get_reader_feed',
+    'get_reader_post',
+    'get_user_profile',
     'list_posts',
+    'list_publication_tags',
+    'list_reader_posts',
     'list_subscribers',
+    'list_subscriptions',
+    'publish_draft',
+    'restack_item',
+    'update_draft',
   ];
 
   test('exposes exactly the registered tools', async () => {

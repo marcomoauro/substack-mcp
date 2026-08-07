@@ -4,7 +4,23 @@ import {TEST_ENV} from './env.js';
 
 const API = `${TEST_ENV.SUBSTACK_PUBLICATION_URL}/api/v1`;
 
+// Substack's second host. The publisher surface lives on the publication, but your profile, your
+// subscriptions, the reader feed and Notes are all keyed by user rather than publication and answer
+// only here — so a test that mocks the wrong base gets an unhandled-request failure, by design.
+const GLOBAL_API = 'https://substack.com/api/v1';
+
 export const DRAFTS_URL = `${API}/drafts`;
+export const PUBLICATION_URL = `${API}/publication`;
+export const USER_PROFILE_URL = `${GLOBAL_API}/user/profile/self`;
+export const POST_TAG_URL = `${API}/publication/post-tag`;
+export const POST_URL = `${API}/post`;
+export const SUBSCRIPTIONS_URL = `${GLOBAL_API}/subscriptions/all/v2`;
+export const READER_POSTS_URL = `${GLOBAL_API}/reader/posts`;
+export const POST_BY_ID_URL = `${GLOBAL_API}/posts/by-id`;
+export const READER_FEED_URL = `${GLOBAL_API}/reader/feed`;
+export const READER_FEED_TABS_URL = `${GLOBAL_API}/reader/feed/tabs`;
+export const READER_COMMENT_URL = `${GLOBAL_API}/reader/comment`;
+export const RESTACK_URL = `${GLOBAL_API}/restack/feed`;
 export const SUBSCRIBER_STATS_URL = `${API}/subscriber-stats`;
 export const POST_MANAGEMENT_URL = `${API}/post_management`;
 export const DASHBOARD_SUMMARY_URL = `${API}/publish-dashboard/summary`;
@@ -37,6 +53,353 @@ export const DRAFT_RESPONSE = {
   draft_title: 'Test title',
   draft_subtitle: 'Test subtitle',
   is_published: false,
+};
+
+// Shaped after a real `POST /drafts/:id/publish`: the draft comes back as a post, with the slug and
+// canonical url it did not have while unpublished.
+export const PUBLISHED_POST_RESPONSE = {
+  id: 167712345,
+  title: 'Test title',
+  slug: 'test-title',
+  canonical_url: 'https://test.substack.com/p/test-title',
+  is_published: true,
+};
+
+// Trimmed from a real 111-field response. Deliberately includes a `*_email_disabled` toggle and an
+// HTML blob: they are what the projection in get_publication exists to keep out of an LLM's context,
+// so a test asserting the projection needs them present to prove they were dropped.
+export const PUBLICATION_RESPONSE = {
+  id: 2150088,
+  name: 'Test Publication',
+  subdomain: 'test',
+  custom_domain: null,
+  hero_text: 'A test publication',
+  copyright: 'Test Author',
+  email_from_name: 'Test Author',
+  logo_url: 'https://example.com/logo.png',
+  cover_photo_url: null,
+  author_name: 'Test Author',
+  created_at: '2024-01-01T00:00:00.000Z',
+  language: 'en',
+  payments_state: 'enabled',
+  plans: [],
+  community_enabled: true,
+  moderation_enabled: false,
+  podcast_enabled: false,
+  is_personal_mode: false,
+  invite_only: false,
+  paused: false,
+  post_reaction_email_disabled: true,
+  tos_content: '<p>Terms of service boilerplate</p>',
+  welcome_email_content: '<p>Welcome!</p>',
+};
+
+// Tag ids are UUIDs, unlike every other id in this API — an integer here would make the specs pass
+// against a shape the server never sends.
+export const POST_TAGS_RESPONSE = [
+  {id: 'b0f9ee7d-c995-4d18-9b2f-2bcf261a1a63', publication_id: 2150088, name: 'alarms', slug: 'alarms', hidden: false},
+  {id: '58e5c27e-b4fd-4d0b-b461-be5cd94c84bf', publication_id: 2150088, name: 'Automation', slug: 'automation', hidden: false},
+  {id: 'c1111111-1111-1111-1111-111111111111', publication_id: 2150088, name: 'internal', slug: 'internal', hidden: true},
+];
+
+// What `GET /post/:id/tag` really answers: join rows, with no name and no slug. The whole reason
+// get_post_tags costs a second request.
+export const POST_TAG_ASSOCIATIONS_RESPONSE = [
+  {
+    id: 'd6131d6f-7aa6-4c62-846e-cbbeee0252d1',
+    publication_id: 2150088,
+    post_id: 167712345,
+    post_tag_id: '58e5c27e-b4fd-4d0b-b461-be5cd94c84bf',
+  },
+];
+
+/**
+ * A comment as the API really sends one. Author fields are flat rather than nested under `user`,
+ * replies are a `children_count` rather than an array, and hierarchy is the dot-separated
+ * `ancestor_path` — the three things the fork got wrong by analogy.
+ *
+ * `ancestor_path` values here are the ones observed live: '' at the root, then the parent id, then
+ * grandparent.parent.
+ */
+export const POST_COMMENTS_RESPONSE = {
+  comments: [
+    {
+      id: 309007328,
+      name: 'Top Level',
+      handle: 'toplevel',
+      user_id: 22563751,
+      body: 'A top-level comment',
+      body_json: {type: 'doc', content: []},
+      post_id: 167712345,
+      publication_id: 2150088,
+      date: '2026-08-01T10:00:00.000Z',
+      edited_at: null,
+      ancestor_path: '',
+      reaction_count: 3,
+      restacks: 1,
+      children_count: 2,
+      attachments: [],
+    },
+    {
+      id: 309403526,
+      name: 'First Reply',
+      handle: 'reply1',
+      user_id: 41640433,
+      body: 'A reply',
+      post_id: 167712345,
+      publication_id: 2150088,
+      date: '2026-08-01T11:00:00.000Z',
+      ancestor_path: '309007328',
+      reaction_count: 0,
+      children_count: 1,
+      attachments: [{id: 1}],
+    },
+    {
+      id: 309469354,
+      name: 'Nested Reply',
+      handle: 'reply2',
+      user_id: 99,
+      body: 'A reply to the reply',
+      post_id: 167712345,
+      publication_id: 2150088,
+      date: '2026-08-01T12:00:00.000Z',
+      ancestor_path: '309007328.309403526',
+      reaction_count: 0,
+      children_count: 0,
+      attachments: [],
+    },
+  ],
+  // Never merged into `comments`: these are the ones automod withheld.
+  automod_hidden_comments: [{id: 999, body: 'spam'}],
+};
+
+/**
+ * `GET /subscriptions/all/v2`. `items` is heterogeneous — three types were observed live and only
+ * `subscription` carries a publication. The `label` and `add_more` entries are here so a spec can
+ * prove they are filtered out rather than turned into nameless subscriptions.
+ *
+ * `paused: null` rather than false is the real shape, and the far-future `expiry` on a free
+ * subscription is too — which is why an expiry alone does not mean a paid term.
+ */
+export const SUBSCRIPTIONS_RESPONSE = {
+  items: [
+    {type: 'label', text: 'Paid', trackingParameters: null},
+    {
+      id: 1,
+      type: 'subscription',
+      pub: {id: 5152101, subdomain: 'refactoring', name: 'Refactoring', base_url: 'https://refactoring.fm', author_name: 'Luca'},
+      primaryProfile: {name: 'Luca Rossi'},
+      subscription: {
+        id: 111,
+        membership_state: 'subscribed',
+        type: 'free',
+        paused: null,
+        expiry: '2121-10-24T19:50:43.886Z',
+        is_favorite: false,
+        is_founding: false,
+        email_disabled: false,
+      },
+    },
+    {
+      id: 2,
+      type: 'subscription',
+      pub: {id: 2222, subdomain: 'paused-pub', name: 'A Paused One', base_url: 'https://paused.substack.com'},
+      subscription: {id: 222, membership_state: 'subscribed', type: 'free', paused: true, expiry: null},
+    },
+    {
+      id: 3,
+      type: 'subscription',
+      pub: {id: 3333, subdomain: 'expired-pub', name: 'An Expired One', base_url: 'https://expired.substack.com'},
+      subscription: {id: 333, membership_state: 'expired', type: 'paid', paused: null, expiry: '2020-01-01T00:00:00.000Z'},
+    },
+    {type: 'add_more'},
+  ],
+  nextCursor: null,
+};
+
+/**
+ * `GET /reader/posts` — the Inbox. Each post really does arrive with `body_html` and `body_json`
+ * attached, which is why the listing is projected; the fixture carries them so a spec can prove they
+ * are dropped. Paging is `after`, taken from the last `inboxItems` entry's `content_date` — the
+ * top-level `cursor` is null on this endpoint.
+ */
+export const READER_POSTS_RESPONSE = {
+  posts: [
+    {
+      id: 205705837,
+      publication_id: 5152101,
+      title: 'REST API Authentication Methods Clearly Explained',
+      subtitle: 'A subtitle',
+      type: 'newsletter',
+      post_date: '2026-08-05T18:25:08.238Z',
+      audience: 'everyone',
+      canonical_url: 'https://blog.levelupcoding.com/p/rest-api-authentication-methods',
+      wordcount: 1200,
+      reaction_count: 40,
+      comment_count: 3,
+      restacks: 5,
+      is_viewed: true,
+      read_progress: 0.5,
+      is_saved: false,
+      publishedBylines: [{name: 'The Author'}],
+      body_html: '<p>The whole post body, tens of KB in reality</p>',
+      body_json: {type: 'doc', content: []},
+      truncated_body_text: 'The whole post body…',
+    },
+  ],
+  publications: [{id: 5152101, name: 'Level Up Coding'}],
+  more: true,
+  inboxItems: [{content_date: '2026-08-05T07:01:55.441Z'}],
+  cursor: null,
+};
+
+// `GET /posts/by-id/:id` — the only endpoint that returns another publication's post body.
+export const POST_BY_ID_RESPONSE = {
+  post: {
+    id: 204305990,
+    title: 'A Post From Someone Else',
+    subtitle: 'With a subtitle',
+    post_date: '2026-08-01T10:00:00.000Z',
+    canonical_url: 'https://alexpozzi.substack.com/p/a-post',
+    audience: 'everyone',
+    wordcount: 900,
+    reaction_count: 12,
+    comment_count: 4,
+    restacks: 2,
+    publishedBylines: [{name: 'Alex Pozzi'}],
+    body_html: '<p>The body of someone else’s post</p>',
+    truncated_body_text: 'The body of someone…',
+  },
+  publication: {id: 987, name: 'Alex’s Publication', subdomain: 'alexpozzi'},
+  publicationSettings: {},
+};
+
+/**
+ * `GET /reader/feed`. Three item types, only two of which carry content — `userSuggestions` is a
+ * "people to follow" block with no id, no author and no body. It is in the fixture so a spec can
+ * prove it is dropped rather than summarized into an empty entry.
+ */
+export const READER_FEED_RESPONSE = {
+  items: [
+    {
+      entity_key: 'c-306029118',
+      type: 'comment',
+      context: {type: 'note', timestamp: '2026-08-07T10:03:00.251Z', model_score: 0.9, scores: {}},
+      publication: {name: 'Someone’s Publication'},
+      comment: {
+        id: 306029118,
+        name: 'Stephane Moreau',
+        handle: 'stephane',
+        user_id: 22563751,
+        body: 'Every engineering team wants more autonomy.',
+        body_json: {type: 'doc', content: []},
+        post_id: null,
+        date: '2026-08-07T10:03:00.251Z',
+        ancestor_path: '',
+        reaction_count: 1,
+        children_count: 0,
+        attachments: [],
+      },
+      parentComments: [],
+      canReply: true,
+    },
+    {
+      entity_key: 'p-204305990',
+      type: 'post',
+      context: {type: 'post', timestamp: '2026-07-06T15:48:06.672Z'},
+      publication: {name: 'Alex’s Publication'},
+      post: {
+        id: 204305990,
+        title: 'A Feed Post',
+        subtitle: null,
+        publication_id: 987,
+        post_date: '2026-07-06T15:48:06.672Z',
+        canonical_url: 'https://alexpozzi.substack.com/p/a-post',
+        audience: 'everyone',
+        reaction_count: 8,
+        comment_count: 1,
+        restacks: 0,
+        publishedBylines: [{name: 'Alex Pozzi'}],
+        truncated_body_text: 'A teaser…',
+        body_html: '<p>should be dropped from a feed listing</p>',
+      },
+    },
+    {type: 'userSuggestions', userSuggestions: [{id: 1}, {id: 2}]},
+  ],
+  nextCursor: 'next-page-cursor',
+};
+
+// Names are localized — these came back in Italian on a live account — so a tab is selected by id.
+export const READER_FEED_TABS_RESPONSE = {
+  tabs: [
+    {id: 'for-you', name: 'Per te', type: 'base'},
+    {id: 'subscribed', name: 'Segui già', type: 'secondary'},
+  ],
+};
+
+// `GET /reader/comment/:id` wraps its payload in `item`; the replies endpoint does not.
+export const READER_COMMENT_RESPONSE = {
+  item: {
+    comment: {
+      id: 309007328,
+      name: 'Thread Root',
+      handle: 'root',
+      user_id: 1,
+      body: 'The root of a thread',
+      ancestor_path: '',
+      reaction_count: 5,
+      children_count: 2,
+      attachments: [],
+    },
+  },
+};
+
+export const READER_COMMENT_REPLIES_RESPONSE = {
+  rootComment: {id: 309007328, ancestor_path: ''},
+  commentBranches: [
+    {
+      comment: {
+        id: 309403526,
+        name: 'A Reply',
+        handle: 'replier',
+        user_id: 2,
+        body: 'A reply',
+        ancestor_path: '309007328',
+        children_count: 1,
+        attachments: [],
+      },
+      descendantComments: [
+        {
+          id: 309469354,
+          name: 'A Nested Reply',
+          handle: 'nested',
+          user_id: 3,
+          body: 'A reply to the reply',
+          ancestor_path: '309007328.309403526',
+          children_count: 0,
+          attachments: [],
+        },
+      ],
+    },
+  ],
+  moreBranches: false,
+  nextCursor: null,
+};
+
+// Shaped after `GET substack.com/api/v1/user/profile/self`. Two publications on purpose: the whole
+// point of this endpoint is that the session can reach more than the configured one.
+export const USER_PROFILE_RESPONSE = {
+  id: 41640433,
+  name: 'Test User',
+  handle: 'testuser',
+  bio: 'A test bio',
+  photo_url: 'https://example.com/me.png',
+  publicationUsers: [
+    {role: 'admin', publication: {id: 2150088, subdomain: 'test', name: 'Test Publication'}},
+    {role: 'contributor', publication: {id: 2073698, subdomain: 'other', name: 'Other Publication'}},
+  ],
+  primaryPublication: {id: 2150088, subdomain: 'test'},
+  subscriptions: [{id: 1}, {id: 2}, {id: 3}],
 };
 
 // Shaped after a real response: the endpoint answers with the page of subscribers plus `count`,
@@ -227,6 +590,148 @@ export function createMswServer() {
     });
   }
 
+  function draftUpdateHandler(responder) {
+    return http.put(`${DRAFTS_URL}/:id`, async ({request, params}) => {
+      await record(request);
+      return responder(params.id);
+    });
+  }
+
+  function draftDeleteHandler(responder) {
+    return http.delete(`${DRAFTS_URL}/:id`, async ({request, params}) => {
+      await record(request);
+      return responder(params.id);
+    });
+  }
+
+  function publishDraftHandler(responder) {
+    return http.post(`${DRAFTS_URL}/:id/publish`, async ({request, params}) => {
+      await record(request);
+      return responder(params.id);
+    });
+  }
+
+  function publicationHandler(responder) {
+    return http.get(PUBLICATION_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
+  function userProfileHandler(responder) {
+    return http.get(USER_PROFILE_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
+  function postTagsHandler(responder) {
+    return http.get(POST_TAG_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
+  function createPostTagHandler(responder) {
+    return http.post(POST_TAG_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
+  function postTagAssociationsHandler(responder) {
+    return http.get(`${POST_URL}/:postId/tag`, async ({request, params}) => {
+      await record(request);
+      return responder(params.postId);
+    });
+  }
+
+  function addTagToPostHandler(responder) {
+    return http.post(`${POST_URL}/:postId/tag/:tagId`, async ({request, params}) => {
+      await record(request);
+      return responder(params.postId, params.tagId);
+    });
+  }
+
+  function postCommentsHandler(responder) {
+    return http.get(`${POST_URL}/:postId/comments`, async ({request, params}) => {
+      await record(request);
+      return responder(params.postId);
+    });
+  }
+
+  function createCommentHandler(responder) {
+    return http.post(`${POST_URL}/:postId/comment`, async ({request, params}) => {
+      await record(request);
+      return responder(params.postId);
+    });
+  }
+
+  function subscriptionsHandler(responder) {
+    return http.get(SUBSCRIPTIONS_URL, async ({request}) => {
+      await record(request);
+      return responder(new URL(request.url).searchParams.get('cursor'));
+    });
+  }
+
+  function readerPostsHandler(responder) {
+    return http.get(READER_POSTS_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
+  function postByIdHandler(responder) {
+    return http.get(`${POST_BY_ID_URL}/:postId`, async ({request, params}) => {
+      await record(request);
+      return responder(params.postId);
+    });
+  }
+
+  // Registered before the tabs handler would otherwise shadow it: `/reader/feed/tabs` and
+  // `/reader/feed/profile/:id` are both deeper than `/reader/feed`, so each gets its own exact path.
+  function readerFeedHandler(responder) {
+    return http.get(READER_FEED_URL, async ({request}) => {
+      await record(request);
+      return responder(new URL(request.url).searchParams.get('tab'));
+    });
+  }
+
+  function readerFeedTabsHandler(responder) {
+    return http.get(READER_FEED_TABS_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
+  function profileFeedHandler(responder) {
+    return http.get(`${READER_FEED_URL}/profile/:userId`, async ({request, params}) => {
+      await record(request);
+      return responder(params.userId);
+    });
+  }
+
+  function readerCommentHandler(responder) {
+    return http.get(`${READER_COMMENT_URL}/:commentId`, async ({request, params}) => {
+      await record(request);
+      return responder(params.commentId);
+    });
+  }
+
+  function readerCommentRepliesHandler(responder) {
+    return http.get(`${READER_COMMENT_URL}/:commentId/replies`, async ({request, params}) => {
+      await record(request);
+      return responder(params.commentId);
+    });
+  }
+
+  function restackHandler(responder) {
+    return http.post(RESTACK_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
   function statsHandler(url, responder) {
     return http.get(url, async ({request}) => {
       await record(request);
@@ -288,6 +793,34 @@ export function createMswServer() {
     subscriberStatsHandler(() => HttpResponse.json(SUBSCRIBER_STATS_RESPONSE, {status: 200})),
     postsHandler(() => HttpResponse.json(POSTS_RESPONSE, {status: 200})),
     draftDetailHandler(() => HttpResponse.json(DRAFT_DETAIL_RESPONSE, {status: 200})),
+    draftUpdateHandler(() => HttpResponse.json(DRAFT_RESPONSE, {status: 200})),
+    draftDeleteHandler(() => HttpResponse.json({}, {status: 200})),
+    publishDraftHandler(() => HttpResponse.json(PUBLISHED_POST_RESPONSE, {status: 200})),
+    publicationHandler(() => HttpResponse.json(PUBLICATION_RESPONSE, {status: 200})),
+    userProfileHandler(() => HttpResponse.json(USER_PROFILE_RESPONSE, {status: 200})),
+    postTagsHandler(() => HttpResponse.json(POST_TAGS_RESPONSE, {status: 200})),
+    createPostTagHandler(() => HttpResponse.json(
+      {id: 'aaaaaaaa-0000-0000-0000-000000000000', publication_id: 2150088, name: 'brand new', slug: 'brand-new', hidden: false},
+      {status: 200}
+    )),
+    postTagAssociationsHandler(() => HttpResponse.json(POST_TAG_ASSOCIATIONS_RESPONSE, {status: 200})),
+    addTagToPostHandler((postId, tagId) => HttpResponse.json(
+      {id: 'ffffffff-0000-0000-0000-000000000000', publication_id: 2150088, post_id: Number(postId), post_tag_id: tagId},
+      {status: 200}
+    )),
+    postCommentsHandler(() => HttpResponse.json(POST_COMMENTS_RESPONSE, {status: 200})),
+    createCommentHandler(() => HttpResponse.json(POST_COMMENTS_RESPONSE.comments[0], {status: 200})),
+    subscriptionsHandler(() => HttpResponse.json(SUBSCRIPTIONS_RESPONSE, {status: 200})),
+    readerPostsHandler(() => HttpResponse.json(READER_POSTS_RESPONSE, {status: 200})),
+    postByIdHandler(() => HttpResponse.json(POST_BY_ID_RESPONSE, {status: 200})),
+    // The two deeper /reader/feed paths come first: MSW resolves in registration order, and
+    // `/reader/feed` registered ahead of them would swallow both.
+    readerFeedTabsHandler(() => HttpResponse.json(READER_FEED_TABS_RESPONSE, {status: 200})),
+    profileFeedHandler(() => HttpResponse.json(READER_FEED_RESPONSE, {status: 200})),
+    readerFeedHandler(() => HttpResponse.json(READER_FEED_RESPONSE, {status: 200})),
+    readerCommentRepliesHandler(() => HttpResponse.json(READER_COMMENT_REPLIES_RESPONSE, {status: 200})),
+    readerCommentHandler(() => HttpResponse.json(READER_COMMENT_RESPONSE, {status: 200})),
+    restackHandler(() => HttpResponse.json({id: 'restack-1'}, {status: 200})),
     statsHandler(DASHBOARD_SUMMARY_URL, () => HttpResponse.json(DASHBOARD_SUMMARY_RESPONSE, {status: 200})),
     statsHandler(OPEN_RATE_URL, () => HttpResponse.json(OPEN_RATE_RESPONSE, {status: 200})),
     statsHandler(VIEWS_30D_URL, () => HttpResponse.json(VIEWS_30D_RESPONSE, {status: 200})),
@@ -312,6 +845,26 @@ export function createMswServer() {
     subscriberStatsHandler,
     postsHandler,
     draftDetailHandler,
+    draftUpdateHandler,
+    draftDeleteHandler,
+    publishDraftHandler,
+    publicationHandler,
+    userProfileHandler,
+    postTagsHandler,
+    createPostTagHandler,
+    postTagAssociationsHandler,
+    addTagToPostHandler,
+    postCommentsHandler,
+    createCommentHandler,
+    subscriptionsHandler,
+    readerPostsHandler,
+    postByIdHandler,
+    readerFeedHandler,
+    readerFeedTabsHandler,
+    profileFeedHandler,
+    readerCommentHandler,
+    readerCommentRepliesHandler,
+    restackHandler,
     statsHandler,
     postStatsHandler,
     analyticsHandler,

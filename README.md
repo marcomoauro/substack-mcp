@@ -112,6 +112,246 @@ There is no paging: an export covers the whole matching set.
 </details>
 
 <details>
+<summary><strong>update_draft</strong> - Change a draft's title, subtitle or audience</summary>
+
+The update is **partial**: only the fields you pass change, and the body is left alone.
+
+**Inputs**:
+- `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
+- `draft_title` (string, optional)
+- `draft_subtitle` (string, optional)
+- `audience` (`everyone` | `only_paid` | `founding`, optional)
+
+**Returns**: `{draft_id, updated_fields, draft_title, draft_subtitle, audience, is_published}`.
+A call with no field to change is refused rather than sent as a no-op.
+</details>
+
+<details>
+<summary><strong>publish_draft</strong> - Publish a draft</summary>
+
+**Inputs**:
+- `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
+- `send` (boolean, optional): email the post to subscribers. **Defaults to `false`**, unlike the
+  Substack API's own default — the post goes live on the web either way, but an email cannot be
+  recalled, so it has to be asked for explicitly.
+
+**Returns**: `{status, draft_id, post_id, title, slug, canonical_url, emailed, email_sent_at}`.
+`emailed` is what was *asked* for; `email_sent_at` is the server's own record of whether it mailed.
+
+The email intent is written to the draft's `should_send_email` **before** publishing, as well as being
+passed on the publish call. That field is where the dashboard keeps the decision and it defaults to
+`true`, so setting only one of the two would risk mailing the whole list if the endpoint reads the
+draft rather than the request body.
+
+There is no unpublish tool: publishing cannot be undone from this server.
+</details>
+
+<details>
+<summary><strong>delete_draft</strong> - Delete an unpublished draft</summary>
+
+**Inputs**:
+- `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
+
+**Returns**: `{status, draft_id, draft_title}`.
+
+Substack deletes drafts and published posts through the *same* endpoint, so this tool reads the
+target first and **refuses if it is published** — removing a live post is irreversible and is left
+to the dashboard.
+</details>
+
+<details>
+<summary><strong>get_publication</strong> - Read your publication's settings</summary>
+
+**Inputs**:
+- `full` (boolean, optional): return all 111 fields (~24 KB) instead of the projection.
+  Defaults to `false`.
+
+**Returns**: by default a projection — name, subdomain, custom domain, hero text, copyright, sender
+name, logo, plans, payment state and the community/podcast flags — plus `_meta` naming how many
+fields were dropped. The full payload is mostly notification toggles and the raw HTML of the welcome
+email, terms and privacy pages.
+</details>
+
+<details>
+<summary><strong>get_user_profile</strong> - Read the account behind the session</summary>
+
+**Inputs**:
+- `full` (boolean, optional): include the complete `subscriptions` array. Defaults to `false`.
+
+**Returns**: `{id, name, handle, bio, photo_url, publications, primary_publication_id,
+subscription_count}`. `publications` lists every publication the session has a role on, which is how
+to discover that `SUBSTACK_PUBLICATION_URL` is not the only one it could be pointed at.
+</details>
+
+<details>
+<summary><strong>list_publication_tags</strong> - List the tags defined on your publication</summary>
+
+**Inputs**:
+- `include_hidden` (boolean, optional): include tags not shown in the navigation. Defaults to `true`.
+
+**Returns**: `{total, returned, tags}`, each `{id, name, slug, hidden}`. Tag ids are **UUIDs**, not
+integers — unlike every other id in this API.
+</details>
+
+<details>
+<summary><strong>get_post_tags</strong> - List the tags on one post</summary>
+
+**Inputs**:
+- `post_id` (number): the id from `list_posts`. Works for drafts too.
+
+**Returns**: `{post_id, count, tags}`, each `{post_tag_id, name, slug, hidden, association_id}`.
+
+The underlying endpoint answers only UUIDs, so this resolves the names against the publication's tag
+list. Neither `get_draft` nor `list_posts` carries tags, so this is the only way to read them back.
+</details>
+
+<details>
+<summary><strong>add_tag_to_post</strong> - Tag a post</summary>
+
+**Inputs**:
+- `post_id` (number): the id from `list_posts`. Works for drafts too.
+- `tag_name` (string): matched case-insensitively against existing tags
+- `create_if_missing` (boolean, optional): create the tag when no name matches. Defaults to `true`;
+  set it to `false` to have a typo reported instead of turned into a new tag.
+
+**Returns**: `{status, post_id, tag, tag_created, association_id}` where `status` is `tagged` or
+`already_tagged` — re-adding a tag the post already has answers a bare `400` upstream, so it is
+checked first.
+
+Takes a name rather than an id because the ids are UUIDs, which no caller could reasonably hold.
+</details>
+
+<details>
+<summary><strong>get_post_comments</strong> - Read the comments on one of your posts</summary>
+
+**Inputs**:
+- `post_id` (number): the id from `list_posts`
+- `limit` (number, optional): 1–100, defaults to 50
+
+**Returns**: `{post_id, returned, automod_hidden_count, comments}`. Each comment carries its author,
+plain-text body, reaction and reply counts, and its position in the thread (`parent_comment_id`,
+`depth`). Comments withheld by Substack's automod are **counted, not merged in** — they arrive in a
+separate array upstream, and dropping them silently would turn "held" into "nobody commented".
+</details>
+
+<details>
+<summary><strong>comment_on_post</strong> - Comment on one of your posts</summary>
+
+**Inputs**:
+- `post_id` (number): the id from `list_posts`
+- `body` (string): plain text; Substack converts it server-side
+
+**Returns**: `{status, post_id, comment}`.
+
+This is published under your name. The full text is logged at `info` before the request, since the log
+is the only record of what was said. This server does not expose deletion, but the comment can be
+removed from the Substack UI — unlike a restack, a comment does have an id of its own.
+</details>
+
+The seven tools below read **`substack.com`**, not your publication. They are about the account as a
+*reader* — what it subscribes to, what is in its inbox and feed — which is a different host and a
+different id space from the publisher surface above.
+
+<details>
+<summary><strong>list_subscriptions</strong> - List what this account subscribes to</summary>
+
+**Inputs**:
+- `limit` (number, optional): 1–500, defaults to 100
+- `active_only` (boolean, optional): exclude paused and expired subscriptions. Defaults to `true`.
+
+**Returns**: `{returned, pages_fetched, subscriptions}`, each with plan, `membership_state`,
+`is_founding`, `is_favorite` and whether emails are off. Pages internally up to 20 requests and says
+`truncated: true` if that bound is what stopped it.
+
+Not to be confused with `list_subscribers`, which is who subscribes to *you*.
+</details>
+
+<details>
+<summary><strong>list_reader_posts</strong> - The reader Inbox</summary>
+
+**Inputs**:
+- `limit` (number, optional): 1–100, defaults to 20
+- `after` (string, optional): the `next_after` from a previous response. A **timestamp**, not an
+  opaque cursor — this endpoint's own `cursor` field is always null.
+
+**Returns**: `{returned, more, next_after, posts}`, each post summarised with its reading state
+(`is_read`, `read_progress`, `is_saved`). The Inbox sends every post's full body; it is dropped here,
+so use `get_reader_post` to read one.
+</details>
+
+<details>
+<summary><strong>get_reader_post</strong> - Read any post in full</summary>
+
+**Inputs**:
+- `post_id` (number): from `list_reader_posts` or `get_reader_feed`
+- `include_body` (boolean, optional): defaults to `true`
+
+**Returns**: the post's metadata plus `body_html`. `body_truncated: true` means the body was withheld
+behind a paywall this session does not clear — `preview_text` still carries the teaser.
+
+The body stays HTML: converting it would mean a new dependency or a regex pass over markup, and a
+regex HTML converter mangles nested lists and embeds *silently*.
+</details>
+
+<details>
+<summary><strong>get_reader_feed</strong> - The Notes feed</summary>
+
+**Inputs**:
+- `tab` (string, optional): tab **id** — `for-you` (default) or `subscribed`. Never the display name:
+  those are localized.
+- `limit` (number, optional): 1–50, defaults to 20
+- `cursor` (string, optional): the `next_cursor` from a previous response
+- `include_tabs` (boolean, optional): also return the available tab ids
+
+**Returns**: `{tab, returned, next_cursor, items}`. Each item is a `note` or a `post`.
+`non_content_items_skipped` counts the "people to follow" blocks Substack mixes into the array, which
+carry no content at all.
+</details>
+
+<details>
+<summary><strong>get_profile_feed</strong> - What one account has published</summary>
+
+**Inputs**:
+- `user_id` (number, optional): defaults to `SUBSTACK_USER_ID` — your own account
+- `type` (`all` | `notes` | `posts`, optional): defaults to `all`
+- `limit` (number, optional): 1–50, defaults to 20
+- `cursor` (string, optional)
+
+**Returns**: `{user_id, type, returned, next_cursor, items}`. When filtering, `read_from_profile`
+reports how many entries the page actually held — otherwise "3 notes out of 20 entries read" would
+look like "this account has written 3 notes".
+</details>
+
+<details>
+<summary><strong>get_comment_thread</strong> - Read a Note and its replies</summary>
+
+**Inputs**:
+- `comment_id` (number): without the `c-` prefix Substack uses in urls
+- `include_replies` (boolean, optional): defaults to `true`
+
+**Returns**: `{comment, branch_count, replies_returned, more_branches, next_cursor, branches}`. Each
+branch is a direct reply plus its descendants, with `parent_comment_id` and `depth` resolved.
+</details>
+
+<details>
+<summary><strong>restack_item</strong> - Restack a Note</summary>
+
+**Inputs**:
+- `comment_id` (number): the Note to restack, from `get_reader_feed` or `get_profile_feed`
+- `tab_id` (string, optional): defaults to `for-you`
+
+**Returns**: `{status, comment_id, restack_id, note}`.
+
+This is public and appears on your profile, and **cannot be undone from here**: a restack has no id of
+its own — it surfaces the original Note with `context: comment_restack` — so there is nothing for this
+server to delete. Remove it from the Substack UI.
+
+Notes only. Restacking a *post* is not offered: that call answers `404` even for a published post on
+your own publication, so a `post_id` parameter would produce an error that reads as the post being
+gone rather than as the tool being wrong.
+</details>
+
+<details>
 <summary><strong>get_publication_stats</strong> - Read the headline stats</summary>
 
 **Inputs**: none.
