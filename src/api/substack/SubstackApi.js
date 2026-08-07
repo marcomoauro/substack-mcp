@@ -236,6 +236,85 @@ export default class SubstackApi {
   }
 
   /**
+   * Every tag defined on the publication, as `{id, publication_id, name, slug, hidden}`.
+   *
+   * The path is `/publication/post-tag`, not `/post_tags` — that one answers 404. GET lists and POST
+   * creates on the same path. Note the id is a **UUID string**, not an integer like every other id
+   * in this API, which is what makes `add_tag_to_post` take a name rather than an id.
+   */
+  async getPostTags() {
+    return this.request({
+      method: 'GET',
+      path: '/publication/post-tag',
+      referer: '/publish/settings',
+    });
+  }
+
+  /**
+   * The tags currently on one post. Neither `GET /drafts/:id` nor `post_management/*` carries them —
+   * verified — so this is the only way to read back what `addTagToPost` did.
+   */
+  async getTagsForPost(post_id) {
+    return this.request({
+      method: 'GET',
+      path: `/post/${post_id}/tag`,
+      referer: '/publish/post',
+    });
+  }
+
+  /**
+   * Creates a tag on the publication. UNVERIFIED: the path is confirmed by the GET above answering
+   * on it, but firing the POST would leave a tag behind on a real publication.
+   */
+  async createPostTag(name) {
+    return this.request({
+      method: 'POST',
+      path: '/publication/post-tag',
+      body: {name},
+      referer: '/publish/settings',
+    });
+  }
+
+  /**
+   * Attaches an existing tag to a post. Verified: answers with the join row —
+   * `{publication_id, post_id, post_tag_id, id}` — where `id` is the association's own UUID, distinct
+   * from `post_tag_id`. Works on drafts as well as published posts.
+   */
+  async addTagToPost(post_id, post_tag_id) {
+    return this.request({
+      method: 'POST',
+      path: `/post/${post_id}/tag/${post_tag_id}`,
+      referer: '/publish/post',
+    });
+  }
+
+  /**
+   * The comments on one of your posts. Answers `{comments, automod_hidden_comments}` — the second
+   * array is the ones Substack's automod withheld, which never appear in the first.
+   */
+  async getPostComments(post_id, {limit = 50} = {}) {
+    return this.request({
+      method: 'GET',
+      path: `/post/${post_id}/comments`,
+      params: {limit},
+      referer: '/publish/post',
+    });
+  }
+
+  /**
+   * Posts a comment on one of your posts, as you. UNVERIFIED: confirming it means leaving a public
+   * comment on a real post.
+   */
+  async commentOnPost(post_id, body) {
+    return this.request({
+      method: 'POST',
+      path: `/post/${post_id}/comment`,
+      body: {body},
+      referer: '/publish/post',
+    });
+  }
+
+  /**
    * Your own account, on substack.com rather than the publication: id, handle, bio, and the
    * `publicationUsers` list that names every publication you have a role on.
    */

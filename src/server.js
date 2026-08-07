@@ -12,6 +12,11 @@ import {deleteDraftSchema, deleteDraftHandler} from "./tools/delete_draft.js";
 import {publishDraftSchema, publishDraftHandler} from "./tools/publish_draft.js";
 import {getPublicationSchema, getPublicationHandler} from "./tools/get_publication.js";
 import {getUserProfileSchema, getUserProfileHandler} from "./tools/get_user_profile.js";
+import {listPublicationTagsSchema, listPublicationTagsHandler} from "./tools/list_publication_tags.js";
+import {getPostTagsSchema, getPostTagsHandler} from "./tools/get_post_tags.js";
+import {addTagToPostSchema, addTagToPostHandler} from "./tools/add_tag_to_post.js";
+import {getPostCommentsSchema, getPostCommentsHandler} from "./tools/get_post_comments.js";
+import {commentOnPostSchema, commentOnPostHandler} from "./tools/comment_on_post.js";
 import {logger} from "./logger.js";
 
 export const tools = {
@@ -101,6 +106,45 @@ export const tools = {
       "SUBSTACK_PUBLICATION_URL points at.",
     schema: getUserProfileSchema,
     handler: getUserProfileHandler,
+  },
+  list_publication_tags: {
+    description:
+      "List every tag defined on your Substack publication, with its name, slug and whether it is " +
+      "hidden. Tag ids are UUIDs, so this is how to find one — though add_tag_to_post takes a name " +
+      "and does not need it.",
+    schema: listPublicationTagsSchema,
+    handler: listPublicationTagsHandler,
+  },
+  get_post_tags: {
+    description:
+      "List the tags on one post, by name. The underlying endpoint returns only UUIDs, so this " +
+      "resolves them against the publication's tag list — it is the only way to read back what " +
+      "add_tag_to_post did, since neither get_draft nor list_posts carries tags.",
+    schema: getPostTagsSchema,
+    handler: getPostTagsHandler,
+  },
+  add_tag_to_post: {
+    description:
+      "Add a tag to a post, by tag name, creating the tag on the publication if it does not exist " +
+      "yet. Works on drafts as well as published posts. Reports `already_tagged` rather than failing " +
+      "when the post already carries the tag.",
+    schema: addTagToPostSchema,
+    handler: addTagToPostHandler,
+  },
+  get_post_comments: {
+    description:
+      "Read the comments on one of your posts, each with its author, text, reaction and reply " +
+      "counts, and its position in the thread. Comments withheld by Substack's automod are counted " +
+      "separately under automod_hidden_count rather than mixed in.",
+    schema: getPostCommentsSchema,
+    handler: getPostCommentsHandler,
+  },
+  comment_on_post: {
+    description:
+      "Post a public comment on one of your posts, as you. This is published under your name and " +
+      "this server offers no way to delete it.",
+    schema: commentOnPostSchema,
+    handler: commentOnPostHandler,
   },
   get_publication_stats: {
     description:

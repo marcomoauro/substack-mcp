@@ -12,6 +12,8 @@ const GLOBAL_API = 'https://substack.com/api/v1';
 export const DRAFTS_URL = `${API}/drafts`;
 export const PUBLICATION_URL = `${API}/publication`;
 export const USER_PROFILE_URL = `${GLOBAL_API}/user/profile/self`;
+export const POST_TAG_URL = `${API}/publication/post-tag`;
+export const POST_URL = `${API}/post`;
 export const SUBSCRIBER_STATS_URL = `${API}/subscriber-stats`;
 export const POST_MANAGEMENT_URL = `${API}/post_management`;
 export const DASHBOARD_SUMMARY_URL = `${API}/publish-dashboard/summary`;
@@ -83,6 +85,85 @@ export const PUBLICATION_RESPONSE = {
   post_reaction_email_disabled: true,
   tos_content: '<p>Terms of service boilerplate</p>',
   welcome_email_content: '<p>Welcome!</p>',
+};
+
+// Tag ids are UUIDs, unlike every other id in this API — an integer here would make the specs pass
+// against a shape the server never sends.
+export const POST_TAGS_RESPONSE = [
+  {id: 'b0f9ee7d-c995-4d18-9b2f-2bcf261a1a63', publication_id: 2150088, name: 'alarms', slug: 'alarms', hidden: false},
+  {id: '58e5c27e-b4fd-4d0b-b461-be5cd94c84bf', publication_id: 2150088, name: 'Automation', slug: 'automation', hidden: false},
+  {id: 'c1111111-1111-1111-1111-111111111111', publication_id: 2150088, name: 'internal', slug: 'internal', hidden: true},
+];
+
+// What `GET /post/:id/tag` really answers: join rows, with no name and no slug. The whole reason
+// get_post_tags costs a second request.
+export const POST_TAG_ASSOCIATIONS_RESPONSE = [
+  {
+    id: 'd6131d6f-7aa6-4c62-846e-cbbeee0252d1',
+    publication_id: 2150088,
+    post_id: 167712345,
+    post_tag_id: '58e5c27e-b4fd-4d0b-b461-be5cd94c84bf',
+  },
+];
+
+/**
+ * A comment as the API really sends one. Author fields are flat rather than nested under `user`,
+ * replies are a `children_count` rather than an array, and hierarchy is the dot-separated
+ * `ancestor_path` — the three things the fork got wrong by analogy.
+ *
+ * `ancestor_path` values here are the ones observed live: '' at the root, then the parent id, then
+ * grandparent.parent.
+ */
+export const POST_COMMENTS_RESPONSE = {
+  comments: [
+    {
+      id: 309007328,
+      name: 'Top Level',
+      handle: 'toplevel',
+      user_id: 22563751,
+      body: 'A top-level comment',
+      body_json: {type: 'doc', content: []},
+      post_id: 167712345,
+      publication_id: 2150088,
+      date: '2026-08-01T10:00:00.000Z',
+      edited_at: null,
+      ancestor_path: '',
+      reaction_count: 3,
+      restacks: 1,
+      children_count: 2,
+      attachments: [],
+    },
+    {
+      id: 309403526,
+      name: 'First Reply',
+      handle: 'reply1',
+      user_id: 41640433,
+      body: 'A reply',
+      post_id: 167712345,
+      publication_id: 2150088,
+      date: '2026-08-01T11:00:00.000Z',
+      ancestor_path: '309007328',
+      reaction_count: 0,
+      children_count: 1,
+      attachments: [{id: 1}],
+    },
+    {
+      id: 309469354,
+      name: 'Nested Reply',
+      handle: 'reply2',
+      user_id: 99,
+      body: 'A reply to the reply',
+      post_id: 167712345,
+      publication_id: 2150088,
+      date: '2026-08-01T12:00:00.000Z',
+      ancestor_path: '309007328.309403526',
+      reaction_count: 0,
+      children_count: 0,
+      attachments: [],
+    },
+  ],
+  // Never merged into `comments`: these are the ones automod withheld.
+  automod_hidden_comments: [{id: 999, body: 'spam'}],
 };
 
 // Shaped after `GET substack.com/api/v1/user/profile/self`. Two publications on purpose: the whole
@@ -324,6 +405,48 @@ export function createMswServer() {
     });
   }
 
+  function postTagsHandler(responder) {
+    return http.get(POST_TAG_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
+  function createPostTagHandler(responder) {
+    return http.post(POST_TAG_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
+  function postTagAssociationsHandler(responder) {
+    return http.get(`${POST_URL}/:postId/tag`, async ({request, params}) => {
+      await record(request);
+      return responder(params.postId);
+    });
+  }
+
+  function addTagToPostHandler(responder) {
+    return http.post(`${POST_URL}/:postId/tag/:tagId`, async ({request, params}) => {
+      await record(request);
+      return responder(params.postId, params.tagId);
+    });
+  }
+
+  function postCommentsHandler(responder) {
+    return http.get(`${POST_URL}/:postId/comments`, async ({request, params}) => {
+      await record(request);
+      return responder(params.postId);
+    });
+  }
+
+  function createCommentHandler(responder) {
+    return http.post(`${POST_URL}/:postId/comment`, async ({request, params}) => {
+      await record(request);
+      return responder(params.postId);
+    });
+  }
+
   function statsHandler(url, responder) {
     return http.get(url, async ({request}) => {
       await record(request);
@@ -390,6 +513,18 @@ export function createMswServer() {
     publishDraftHandler(() => HttpResponse.json(PUBLISHED_POST_RESPONSE, {status: 200})),
     publicationHandler(() => HttpResponse.json(PUBLICATION_RESPONSE, {status: 200})),
     userProfileHandler(() => HttpResponse.json(USER_PROFILE_RESPONSE, {status: 200})),
+    postTagsHandler(() => HttpResponse.json(POST_TAGS_RESPONSE, {status: 200})),
+    createPostTagHandler(() => HttpResponse.json(
+      {id: 'aaaaaaaa-0000-0000-0000-000000000000', publication_id: 2150088, name: 'brand new', slug: 'brand-new', hidden: false},
+      {status: 200}
+    )),
+    postTagAssociationsHandler(() => HttpResponse.json(POST_TAG_ASSOCIATIONS_RESPONSE, {status: 200})),
+    addTagToPostHandler((postId, tagId) => HttpResponse.json(
+      {id: 'ffffffff-0000-0000-0000-000000000000', publication_id: 2150088, post_id: Number(postId), post_tag_id: tagId},
+      {status: 200}
+    )),
+    postCommentsHandler(() => HttpResponse.json(POST_COMMENTS_RESPONSE, {status: 200})),
+    createCommentHandler(() => HttpResponse.json(POST_COMMENTS_RESPONSE.comments[0], {status: 200})),
     statsHandler(DASHBOARD_SUMMARY_URL, () => HttpResponse.json(DASHBOARD_SUMMARY_RESPONSE, {status: 200})),
     statsHandler(OPEN_RATE_URL, () => HttpResponse.json(OPEN_RATE_RESPONSE, {status: 200})),
     statsHandler(VIEWS_30D_URL, () => HttpResponse.json(VIEWS_30D_RESPONSE, {status: 200})),
@@ -419,6 +554,12 @@ export function createMswServer() {
     publishDraftHandler,
     publicationHandler,
     userProfileHandler,
+    postTagsHandler,
+    createPostTagHandler,
+    postTagAssociationsHandler,
+    addTagToPostHandler,
+    postCommentsHandler,
+    createCommentHandler,
     statsHandler,
     postStatsHandler,
     analyticsHandler,

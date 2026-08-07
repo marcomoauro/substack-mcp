@@ -179,6 +179,70 @@ to discover that `SUBSTACK_PUBLICATION_URL` is not the only one it could be poin
 </details>
 
 <details>
+<summary><strong>list_publication_tags</strong> - List the tags defined on your publication</summary>
+
+**Inputs**:
+- `include_hidden` (boolean, optional): include tags not shown in the navigation. Defaults to `true`.
+
+**Returns**: `{total, returned, tags}`, each `{id, name, slug, hidden}`. Tag ids are **UUIDs**, not
+integers — unlike every other id in this API.
+</details>
+
+<details>
+<summary><strong>get_post_tags</strong> - List the tags on one post</summary>
+
+**Inputs**:
+- `post_id` (number): the id from `list_posts`. Works for drafts too.
+
+**Returns**: `{post_id, count, tags}`, each `{post_tag_id, name, slug, hidden, association_id}`.
+
+The underlying endpoint answers only UUIDs, so this resolves the names against the publication's tag
+list. Neither `get_draft` nor `list_posts` carries tags, so this is the only way to read them back.
+</details>
+
+<details>
+<summary><strong>add_tag_to_post</strong> - Tag a post</summary>
+
+**Inputs**:
+- `post_id` (number): the id from `list_posts`. Works for drafts too.
+- `tag_name` (string): matched case-insensitively against existing tags
+- `create_if_missing` (boolean, optional): create the tag when no name matches. Defaults to `true`;
+  set it to `false` to have a typo reported instead of turned into a new tag.
+
+**Returns**: `{status, post_id, tag, tag_created, association_id}` where `status` is `tagged` or
+`already_tagged` — re-adding a tag the post already has answers a bare `400` upstream, so it is
+checked first.
+
+Takes a name rather than an id because the ids are UUIDs, which no caller could reasonably hold.
+</details>
+
+<details>
+<summary><strong>get_post_comments</strong> - Read the comments on one of your posts</summary>
+
+**Inputs**:
+- `post_id` (number): the id from `list_posts`
+- `limit` (number, optional): 1–100, defaults to 50
+
+**Returns**: `{post_id, returned, automod_hidden_count, comments}`. Each comment carries its author,
+plain-text body, reaction and reply counts, and its position in the thread (`parent_comment_id`,
+`depth`). Comments withheld by Substack's automod are **counted, not merged in** — they arrive in a
+separate array upstream, and dropping them silently would turn "held" into "nobody commented".
+</details>
+
+<details>
+<summary><strong>comment_on_post</strong> - Comment on one of your posts</summary>
+
+**Inputs**:
+- `post_id` (number): the id from `list_posts`
+- `body` (string): plain text; Substack converts it server-side
+
+**Returns**: `{status, post_id, comment}`.
+
+This is published under your name, and this server offers no way to delete it. The full text is
+logged at `info` before the request, since the log is the only record of what was said.
+</details>
+
+<details>
 <summary><strong>get_publication_stats</strong> - Read the headline stats</summary>
 
 **Inputs**: none.

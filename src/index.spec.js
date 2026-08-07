@@ -131,16 +131,21 @@ describe('entrypoint — stdio transport', () => {
     const byName = Object.fromEntries(listTools.result.tools.map((tool) => [tool.name, tool]));
 
     assert.deepEqual(Object.keys(byName).sort(), [
+      'add_tag_to_post',
+      'comment_on_post',
       'create_draft_post',
       'delete_draft',
       'export_subscribers',
       'get_analytics',
       'get_draft',
+      'get_post_comments',
       'get_post_stats',
+      'get_post_tags',
       'get_publication',
       'get_publication_stats',
       'get_user_profile',
       'list_posts',
+      'list_publication_tags',
       'list_subscribers',
       'publish_draft',
       'update_draft',
