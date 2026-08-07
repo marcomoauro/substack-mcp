@@ -5,6 +5,7 @@ import {exportSubscribersSchema, exportSubscribersHandler} from "./tools/export_
 import {listPostsSchema, listPostsHandler} from "./tools/list_posts.js";
 import {getDraftSchema, getDraftHandler} from "./tools/get_draft.js";
 import {getPublicationStatsSchema, getPublicationStatsHandler} from "./tools/get_publication_stats.js";
+import {getAnalyticsSchema, getAnalyticsHandler} from "./tools/get_analytics.js";
 import {logger} from "./logger.js";
 
 export const tools = {
@@ -58,9 +59,23 @@ export const tools = {
   get_publication_stats: {
     description:
       "Read the headline stats of your Substack publication: total and recent subscribers, ARR, " +
-      "site views, and the 30-day email open rate. Takes no arguments.",
+      "site views, and the 30-day email open rate. Takes no arguments. For anything deeper — " +
+      "retention, churn, growth sources, referrals — use get_analytics.",
     schema: getPublicationStatsSchema,
     handler: getPublicationStatsHandler,
+  },
+  get_analytics: {
+    // One tool with a report enum rather than seventeen tools: the reports differ only in their
+    // path and a couple of parameters, and seventeen near-identical entries in tools/list would
+    // make the choice harder for a model rather than easier.
+    description:
+      "Read one analytics report from your Substack publication, covering everything behind the " +
+      "dashboard's Stats tabs: cohort retention, unsubscribes and their reasons, growth sources, " +
+      "referrals, audience overlap with other Substacks, subscriber Notes, paid growth, and " +
+      "timeseries for subscribers, followers and ARR. Pick a report with `report`; the ones " +
+      "covering a period accept from_date and to_date and otherwise default to the last 30 days.",
+    schema: getAnalyticsSchema,
+    handler: getAnalyticsHandler,
   },
 };
 

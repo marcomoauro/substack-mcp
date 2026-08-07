@@ -119,6 +119,46 @@ There is no paging: an export covers the whole matching set.
 **Returns**: total and recent subscribers, email and app subscribers, ARR, site views and the
 30-day email open rate, each with its change where Substack reports one. If one of the underlying
 endpoints fails the rest are still returned, and the failure is named under `errors`.
+
+For anything deeper, use `get_analytics`.
+</details>
+
+<details>
+<summary><strong>get_analytics</strong> - Read one of 17 analytics reports</summary>
+
+Everything behind the dashboard's Stats tabs, as one tool with a `report` enum rather than
+seventeen near-identical tools.
+
+**Inputs**:
+- `report` (string): which report to read — see the table below
+- `from_date`, `to_date` (string, optional): `YYYY-MM-DD`. Used only by the reports covering a
+  period, which default to the last 30 days
+- `limit` (number, optional): 1–100, used only by `audience_overlap` and `subscriber_notes`
+
+| report | what it tells you |
+|---|---|
+| `retention` | cohort retention — how much of each signup cohort is still subscribed months later |
+| `retention_summary` | headline retention at 1, 6 and 12 months |
+| `unsubscribes` / `unsubscribes_timeseries` | churn, with the reasons given |
+| `growth_sources` | where new subscribers came from, ranked |
+| `growth_events` | the individual growth events in a window |
+| `referrals_leaderboard` / `referrals_summary` | who refers most; gifts sent, accepted, converted |
+| `audience_overlap` | other Substacks whose audience overlaps yours — the collaboration shortlist |
+| `audience_locations` | how many countries and US states your subscribers span |
+| `subscriber_notes` | recent Notes written by your subscribers |
+| `email_stats` | per-send delivery and open statistics |
+| `paid_subscriber_growth` | paid growth rate, new subscriptions, expirations |
+| `subscribers_timeseries`, `followers_timeseries`, `arr_timeseries` | counts and revenue over time |
+| `network_attribution` | what share of subscribers arrived via the Substack network |
+
+**Returns**: `{report, params, ignored_params, data}`. `params` is what was actually sent, defaults
+included — the same report answers very differently over a different window, so the numbers mean
+little without it. `ignored_params` names anything you passed that the chosen report does not
+accept, rather than dropping it silently.
+
+> Two neighbouring endpoints are deliberately **not** exposed: `audience_insights/location` (the
+> subscriber map) and `visitor_sources` answer `400` even for Substack's own dashboard, so they are
+> broken upstream rather than mis-called.
 </details>
 
 ### 📋 Requirements
