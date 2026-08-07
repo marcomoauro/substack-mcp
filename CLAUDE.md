@@ -162,6 +162,88 @@ default per status rather than letting the server choose. Free-text search is `q
 one must never be serialized — `query=null` searches for the literal string. `GET /api/v1/drafts/:id`
 returns a single draft whole.
 
+**The draft lifecycle is four verbs on one path.** `POST /drafts`, `PUT /drafts/:id`,
+`POST /drafts/:id/publish`, `DELETE /drafts/:id` — all verified except publish, which cannot be
+confirmed without making something public. Two things follow from `DELETE` being shared with
+published posts: it removes a live post just as readily, so `delete_draft` spends a read to refuse an
+`is_published` target rather than exposing that reach behind a draft-shaped name. And `PUT` is
+genuinely partial — a body carrying only `draft_title` changed that and preserved the body — so an
+absent key must never be sent as null.
+
+**There are two hosts, and they are not interchangeable.** The publisher surface is on the
+publication and keyed by publication id; *your profile, your subscriptions, the reader inbox, the
+Notes feed and comment threads* are on `substack.com/api/v1` and keyed by **user** id. Each answers
+404 for the other's paths, which is why `SubstackApi.requestGlobal` exists as a sibling of `request`
+rather than callers concatenating a base — the choice of host is part of the endpoint.
+
+**The tag surface is `/publication/post-tag`, and `/post_tags` is a 404.** GET lists and POST creates
+on the same path; `/post-tag/:uuid` is one tag and `/post-tag/settings` adds `navigationBarItem`.
+Three measured traps:
+
+- **Tag ids are UUIDs**, the only ids in this API that are not integers. A schema typed `z.number()`
+  fails on contact.
+- **`GET /post/:postId/tag` answers join rows** — `{id, publication_id, post_id, post_tag_id}` — with
+  **no name and no slug**, and neither `GET /drafts/:id` nor `post_management/*` carries tags at all.
+  So reading a post's tags means joining against the tag list; handed over raw it is a list of UUIDs
+  the caller cannot interpret. Note `id` there is the *association's* own UUID, not the tag's.
+- **Attaching a tag twice answers 400**, naming neither the post nor the tag, and the count does not
+  change. `add_tag_to_post` checks first so the answer is `already_tagged` rather than a bare 400.
+
+**Comments and Notes are the same entity**, which is why `src/api/substack/comment.js` serves both:
+a Note is a comment with `type: 'feed'` and no `post_id`. Three of its fields are wrong by analogy
+with the rest of this API, and were wrong in the fork this was ported from:
+
+- The author is **flat** — `name`, `handle`, `photo_url` on the comment. There is no nested `user`.
+- Replies are **`children_count`**. There is no `children` array to take `.length` of.
+- There is **no `parent_id`**. Hierarchy is `ancestor_path`, a **dot-separated** chain of ancestor
+  ids, root-first, empty at the top — verified at three depths: `''`, `'309007328'`,
+  `'309007328.309403526'`. The parent is therefore the **last** segment. Reading the first names the
+  thread root as every nested reply's parent, which is wrong only once a thread is three deep and
+  silently correct before that.
+
+`/post/:id/comments` answers `{comments, automod_hidden_comments}`; the second array is what automod
+withheld and never appears in the first, so merging or dropping it turns "held" into "nobody
+commented".
+
+**Three endpoints return heterogeneous arrays, and only some entries carry content.** This is the
+same silent-drop family as `columnView` and the export's columns, seen from the other side — here the
+hazard is mapping straight through and *inventing* empty entries:
+
+- `/subscriptions/all/v2` → `subscription`, `label` (a section header like "Paid"), `add_more`.
+- `/reader/feed` and `/reader/feed/profile/:userId` → `comment` (a Note), `post`, `userSuggestions`.
+
+Filter on the type, not on whether a field happens to be present: today's `label` has no `pub`, so a
+presence check appears to work and stops working the moment Substack adds a type that carries one.
+
+**Four more facts about the reader surface, each measured:**
+
+- **`paused` is `null`, not `false`**, when a subscription is not paused, and a *free* subscription
+  carries an `expiry` in the year 2121. So `paused === false` drops every active subscription, and a
+  present expiry is not evidence of a paid term.
+- **`/reader/posts` pages by `after`, a timestamp**, taken from the last `inboxItems` entry's
+  `content_date`. Its own top-level `cursor` is always null.
+- **Feed tab `name`s are localized** — they came back in Italian — so a tab is selected by `id`.
+- **The Inbox and the feed attach `body_html` and `body_json` to every post.** An unprojected page of
+  20 runs to hundreds of KB. Listings carry `truncated_body_text`; `/posts/by-id/:id` is how to read
+  one in full, and it is the only endpoint that returns another publication's body.
+
+`get_reader_post` leaves that body as **HTML** rather than converting it. Markdown would mean a new
+dependency or a regex pass over markup, and a regex HTML converter mangles nested lists and embeds
+*silently* — the same argument as `csv.js` reaching the opposite conclusion, because HTML is not a
+bounded grammar and CSV is. An LLM reads HTML perfectly well.
+
+**Deliberately not implemented, and why**, so it is not re-litigated: `create_note` and
+`reply_to_note` need `playwright-extra` plus a stealth plugin to obtain a `cf_clearance` cookie and
+get past Cloudflare bot management on `POST /comment/feed`. That is three heavy dependencies, a
+browser download, a broken Docker image, and a technique that breaks on Cloudflare's next change.
+Also skipped: `update_payment_settings` (paywall pricing from an LLM), deleting *published* posts,
+and a hand-maintained `list_resources` catalog — a second tool list that can drift from `tools/list`.
+
+**Writes log their intent at `info` *before* the request**, not only their outcome —
+`publish_draft.publishing`, `comment_on_post.posting`, `restack_item.restacking`, with the full text
+where there is one. Nothing in this server can unpublish, delete a comment or undo a restack, so that
+line is the only record that it happened.
+
 ## Logging
 
 **Everything must be logged well enough to debug a session from the log alone**, because the
