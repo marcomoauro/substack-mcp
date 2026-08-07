@@ -18,6 +18,80 @@ A Model Context Protocol (MCP) Server for [Substack](https://substack.com) enabl
 **Returns**: "OK" if the post was created successfully.
 </details>
 
+<details>
+<summary><strong>list_subscribers</strong> - List and filter your subscribers</summary>
+
+Exposes the same filtering the Subscribers dashboard offers: 48 columns, 18 operators, free-text
+search, sorting and pagination.
+
+**Inputs**:
+- `filters` (array, optional): conditions combined with **AND**, each `{column, operator, value}`
+- `search` (string, optional): free text matched against subscriber name and email
+- `sort_by` (string, optional): any filterable column
+- `sort_direction` (`asc` | `desc`, optional): defaults to `desc`
+- `limit` (number, optional): 1–100, defaults to 25
+- `offset` (number, optional): for paging
+
+Which operators a column accepts depends on its type:
+
+| Type | Operators |
+|---|---|
+| `Int` | `is` `is_not` `gt` `gte` `lt` `lte` |
+| `String` | `is` `is_not` `is_any_of` `contains` `starts_with` `ends_with` `includes_none` |
+| `DateTime` | `is_on` `is_after` `is_on_or_after` `is_before` `is_on_or_before` |
+| `Array` (`tag_ids`, `emails_enabled`) | `includes_any` `includes_all` `includes_none` |
+| `subscription_type`, `group_membership` | `is` `is_not` `is_any_of` |
+
+The columns cover subscriber identity (name, email, country, state, group membership),
+subscription (type, start/expiry/cancel dates, revenue, Stripe plan, attribution), email
+engagement (opens and unique opens over 7d/30d/6mo, links clicked, sections) and site engagement
+(post views, unique posts seen, comments, shares, days active, activity rating). The full list
+with types reaches the client in the tool's JSON Schema, so a model does not have to guess names.
+
+**Returns**: `{count, returned, limit, offset, subscribers}`. `count` is the total matching the
+filters regardless of `limit`, so a call with `limit: 1` is a cheap way to size a segment.
+
+> **Note**: engagement columns can be *filtered* on but are not part of the returned records —
+> Substack takes the fields it returns from the publication's saved Display settings and ignores a
+> per-request column list. Use `count` with different thresholds to learn about them.
+
+There is no OR and no nesting: anything needing OR has to be issued as separate calls.
+</details>
+
+<details>
+<summary><strong>list_posts</strong> - List drafts, published or scheduled posts</summary>
+
+**Inputs**:
+- `status` (`drafts` | `published` | `scheduled`): which list to read
+- `search` (string, optional): free text matched against title and content
+- `limit` (number, optional): 1–100, defaults to 25
+- `offset` (number, optional): for paging
+- `sort_direction` (`asc` | `desc`, optional): drafts and published posts are newest-first,
+  scheduled posts soonest-first
+
+**Returns**: `{status, total, returned, limit, offset, posts}`, each post summarised — use
+`get_draft` for the full content of an unpublished one.
+</details>
+
+<details>
+<summary><strong>get_draft</strong> - Read one draft in full</summary>
+
+**Inputs**:
+- `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
+
+**Returns**: the draft as Substack stores it, body and audience/email settings included.
+</details>
+
+<details>
+<summary><strong>get_publication_stats</strong> - Read the headline stats</summary>
+
+**Inputs**: none.
+
+**Returns**: total and recent subscribers, email and app subscribers, ARR, site views and the
+30-day email open rate, each with its change where Substack reports one. If one of the underlying
+endpoints fails the rest are still returned, and the failure is named under `errors`.
+</details>
+
 ### 📋 Requirements
 
 - Substack tokens, follow my [guide](https://implementing.substack.com/p/mcp-server-for-substack) to obtain them:

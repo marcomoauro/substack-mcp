@@ -2,7 +2,16 @@ import {test, describe, before, after, afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {HttpResponse} from 'msw';
 import SubstackApi from './SubstackApi.js';
-import {createMswServer, DRAFTS_URL, DRAFT_RESPONSE} from '../../../test/helpers/msw-server.js';
+import {
+  createMswServer,
+  DRAFTS_URL,
+  DRAFT_RESPONSE,
+  SUBSCRIBER_STATS_URL,
+  SUBSCRIBER_STATS_RESPONSE,
+  POSTS_RESPONSE,
+  DRAFT_DETAIL_RESPONSE,
+  DASHBOARD_SUMMARY_RESPONSE,
+} from '../../../test/helpers/msw-server.js';
 import {TEST_ENV, setTestEnv} from '../../../test/helpers/env.js';
 import {captureLogs} from '../../../test/helpers/capture-logs.js';
 
@@ -119,6 +128,123 @@ describe('SubstackApi — postDraft', () => {
     const error = await createApi().postDraft({}).catch((e) => e);
 
     assert.match(error.message, /^SubstackRequestException: Invalid Response: not json$/);
+  });
+});
+
+describe('SubstackApi — getSubscribers', () => {
+  test('POSTs the query to the subscriber-stats endpoint', async () => {
+    const query = {filters: {subscription_type: 'free'}, limit: 25, offset: 0};
+
+    const result = await createApi().getSubscribers(query);
+
+    assert.deepEqual(result, SUBSCRIBER_STATS_RESPONSE);
+    assert.equal(msw.requests.length, 1);
+
+    const [request] = msw.requests;
+    assert.equal(request.method, 'POST');
+    assert.equal(request.url, SUBSCRIBER_STATS_URL);
+    assert.deepEqual(request.body, query);
+  });
+
+  test('authenticates with the session cookie', async () => {
+    await createApi().getSubscribers({filters: {}, limit: 1, offset: 0});
+
+    assert.equal(
+      msw.requests[0].headers.cookie,
+      'substack.sid=test-session-token; connect.sid=test-session-token;'
+    );
+  });
+
+  test('throws a SubstackAPIException when the API rejects the filters', async () => {
+    msw.server.use(
+      msw.subscriberStatsHandler(() => new HttpResponse('bad filter', {status: 400}))
+    );
+
+    const error = await createApi().getSubscribers({filters: {}}).catch((e) => e);
+
+    assert.match(error.message, /^SubstackAPIException: 400\b/);
+  });
+});
+
+describe('SubstackApi — getPosts', () => {
+  test('GETs the requested status with pagination and sort in the query string', async () => {
+    const result = await createApi().getPosts({
+      status: 'published',
+      limit: 25,
+      offset: 50,
+      order_by: 'post_date',
+      order_direction: 'desc',
+    });
+
+    assert.deepEqual(result, POSTS_RESPONSE);
+
+    const url = new URL(msw.requests[0].url);
+    assert.equal(msw.requests[0].method, 'GET');
+    assert.equal(url.pathname, '/api/v1/post_management/published');
+    assert.equal(url.searchParams.get('limit'), '25');
+    assert.equal(url.searchParams.get('offset'), '50');
+    assert.equal(url.searchParams.get('order_by'), 'post_date');
+    assert.equal(url.searchParams.get('order_direction'), 'desc');
+  });
+
+  test('includes the search term as `query` when one is given', async () => {
+    await createApi().getPosts({
+      status: 'drafts',
+      limit: 25,
+      offset: 0,
+      order_by: 'draft_updated_at',
+      order_direction: 'desc',
+      query: 'mcp',
+    });
+
+    assert.equal(new URL(msw.requests[0].url).searchParams.get('query'), 'mcp');
+  });
+
+  // An empty `query=` is what the dashboard sends, but a null one must not become the string
+  // "null" in the URL — that would search for a post named null and return nothing.
+  test('omits `query` entirely when no search term is given', async () => {
+    await createApi().getPosts({
+      status: 'drafts',
+      limit: 25,
+      offset: 0,
+      order_by: 'draft_updated_at',
+      order_direction: 'desc',
+    });
+
+    assert.equal(new URL(msw.requests[0].url).searchParams.has('query'), false);
+  });
+});
+
+describe('SubstackApi — getDraft', () => {
+  test('GETs the draft by id', async () => {
+    const result = await createApi().getDraft(167712345);
+
+    assert.deepEqual(result, DRAFT_DETAIL_RESPONSE);
+    assert.equal(msw.requests[0].method, 'GET');
+    assert.equal(new URL(msw.requests[0].url).pathname, '/api/v1/drafts/167712345');
+  });
+
+  test('throws a SubstackAPIException on 404', async () => {
+    msw.server.use(msw.draftDetailHandler(() => new HttpResponse('nope', {status: 404})));
+
+    const error = await createApi().getDraft(999).catch((e) => e);
+
+    assert.match(error.message, /^SubstackAPIException: 404\b/);
+  });
+});
+
+describe('SubstackApi — request', () => {
+  test('performs a bare GET against a publication path', async () => {
+    const result = await createApi().request({method: 'GET', path: '/publish-dashboard/summary'});
+
+    assert.deepEqual(result, DASHBOARD_SUMMARY_RESPONSE);
+    assert.equal(new URL(msw.requests[0].url).pathname, '/api/v1/publish-dashboard/summary');
+  });
+
+  test('sends no body on a GET', async () => {
+    await createApi().request({method: 'GET', path: '/publish-dashboard/summary'});
+
+    assert.equal(msw.requests[0].body, '');
   });
 });
 

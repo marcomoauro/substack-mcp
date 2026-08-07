@@ -128,12 +128,24 @@ describe('entrypoint — stdio transport', () => {
     assert.deepEqual(Object.keys(initialize.result.capabilities), ['tools']);
 
     const listTools = messages.find((message) => message.id === 2);
-    assert.equal(listTools.result.tools.length, 1);
-    assert.equal(listTools.result.tools[0].name, 'create_draft_post');
+    const byName = Object.fromEntries(listTools.result.tools.map((tool) => [tool.name, tool]));
+
+    assert.deepEqual(Object.keys(byName).sort(), [
+      'create_draft_post',
+      'get_draft',
+      'get_publication_stats',
+      'list_posts',
+      'list_subscribers',
+    ]);
+
     assert.deepEqual(
-      Object.keys(listTools.result.tools[0].inputSchema.properties).sort(),
+      Object.keys(byName.create_draft_post.inputSchema.properties).sort(),
       ['body', 'subtitle', 'title']
     );
+
+    // The whole point of listing over a real transport rather than in-process: the 48-value
+    // column enum has to survive JSON-RPC serialization to be of any use to a client.
+    assert.equal(byName.list_subscribers.inputSchema.properties.filters.items.properties.column.enum.length, 48);
   });
 
   // The process exits 0 as soon as stdin reaches EOF; that is the documented normal shutdown,

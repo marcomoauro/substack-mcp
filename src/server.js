@@ -1,5 +1,9 @@
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {createDraftPostSchema, createDraftPostHandler} from "./tools/create_draft_post.js";
+import {listSubscribersSchema, listSubscribersHandler} from "./tools/list_subscribers.js";
+import {listPostsSchema, listPostsHandler} from "./tools/list_posts.js";
+import {getDraftSchema, getDraftHandler} from "./tools/get_draft.js";
+import {getPublicationStatsSchema, getPublicationStatsHandler} from "./tools/get_publication_stats.js";
 import {logger} from "./logger.js";
 
 export const tools = {
@@ -7,6 +11,45 @@ export const tools = {
     description: "create a draft post on your Substack account.",
     schema: createDraftPostSchema,
     handler: createDraftPostHandler,
+  },
+  list_subscribers: {
+    // The engagement caveat belongs in the description rather than a comment: the columns are
+    // filterable but never come back in the response, because the API takes the fields it returns
+    // from the publication's saved Display settings and ignores a per-request column list. A
+    // caller filtering on opens and then looking for them in the result would otherwise conclude
+    // the data is missing. `count` is the way to read them — filter and look at how many match.
+    description:
+      "List and filter the subscribers of your Substack publication. Supports the same 48 columns " +
+      "and operators as the Subscribers dashboard, combined with AND, plus free-text search, " +
+      "sorting and pagination. Returns `count`, the total matching the filters regardless of " +
+      "`limit`, so a call with limit 1 is a cheap way to size a segment. Engagement columns " +
+      "(email opens, post views, comments, shares, activity rating) can be filtered on but are " +
+      "not included in the returned subscriber records — use `count` with different thresholds to " +
+      "learn about them.",
+    schema: listSubscribersSchema,
+    handler: listSubscribersHandler,
+  },
+  list_posts: {
+    description:
+      "List the posts of your Substack publication: drafts, published posts or scheduled posts. " +
+      "Supports free-text search, pagination and sort direction. Each post is returned as a " +
+      "summary; use get_draft for the full content of an unpublished one.",
+    schema: listPostsSchema,
+    handler: listPostsHandler,
+  },
+  get_draft: {
+    description:
+      "Read one draft post of your Substack publication in full, including its body and its " +
+      "audience and email settings. Take the id from list_posts.",
+    schema: getDraftSchema,
+    handler: getDraftHandler,
+  },
+  get_publication_stats: {
+    description:
+      "Read the headline stats of your Substack publication: total and recent subscribers, ARR, " +
+      "site views, and the 30-day email open rate. Takes no arguments.",
+    schema: getPublicationStatsSchema,
+    handler: getPublicationStatsHandler,
   },
 };
 
