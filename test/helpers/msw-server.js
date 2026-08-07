@@ -4,7 +4,14 @@ import {TEST_ENV} from './env.js';
 
 const API = `${TEST_ENV.SUBSTACK_PUBLICATION_URL}/api/v1`;
 
+// Substack's second host. The publisher surface lives on the publication, but your profile, your
+// subscriptions, the reader feed and Notes are all keyed by user rather than publication and answer
+// only here — so a test that mocks the wrong base gets an unhandled-request failure, by design.
+const GLOBAL_API = 'https://substack.com/api/v1';
+
 export const DRAFTS_URL = `${API}/drafts`;
+export const PUBLICATION_URL = `${API}/publication`;
+export const USER_PROFILE_URL = `${GLOBAL_API}/user/profile/self`;
 export const SUBSCRIBER_STATS_URL = `${API}/subscriber-stats`;
 export const POST_MANAGEMENT_URL = `${API}/post_management`;
 export const DASHBOARD_SUMMARY_URL = `${API}/publish-dashboard/summary`;
@@ -37,6 +44,61 @@ export const DRAFT_RESPONSE = {
   draft_title: 'Test title',
   draft_subtitle: 'Test subtitle',
   is_published: false,
+};
+
+// Shaped after a real `POST /drafts/:id/publish`: the draft comes back as a post, with the slug and
+// canonical url it did not have while unpublished.
+export const PUBLISHED_POST_RESPONSE = {
+  id: 167712345,
+  title: 'Test title',
+  slug: 'test-title',
+  canonical_url: 'https://test.substack.com/p/test-title',
+  is_published: true,
+};
+
+// Trimmed from a real 111-field response. Deliberately includes a `*_email_disabled` toggle and an
+// HTML blob: they are what the projection in get_publication exists to keep out of an LLM's context,
+// so a test asserting the projection needs them present to prove they were dropped.
+export const PUBLICATION_RESPONSE = {
+  id: 2150088,
+  name: 'Test Publication',
+  subdomain: 'test',
+  custom_domain: null,
+  hero_text: 'A test publication',
+  copyright: 'Test Author',
+  email_from_name: 'Test Author',
+  logo_url: 'https://example.com/logo.png',
+  cover_photo_url: null,
+  author_name: 'Test Author',
+  created_at: '2024-01-01T00:00:00.000Z',
+  language: 'en',
+  payments_state: 'enabled',
+  plans: [],
+  community_enabled: true,
+  moderation_enabled: false,
+  podcast_enabled: false,
+  is_personal_mode: false,
+  invite_only: false,
+  paused: false,
+  post_reaction_email_disabled: true,
+  tos_content: '<p>Terms of service boilerplate</p>',
+  welcome_email_content: '<p>Welcome!</p>',
+};
+
+// Shaped after `GET substack.com/api/v1/user/profile/self`. Two publications on purpose: the whole
+// point of this endpoint is that the session can reach more than the configured one.
+export const USER_PROFILE_RESPONSE = {
+  id: 41640433,
+  name: 'Test User',
+  handle: 'testuser',
+  bio: 'A test bio',
+  photo_url: 'https://example.com/me.png',
+  publicationUsers: [
+    {role: 'admin', publication: {id: 2150088, subdomain: 'test', name: 'Test Publication'}},
+    {role: 'contributor', publication: {id: 2073698, subdomain: 'other', name: 'Other Publication'}},
+  ],
+  primaryPublication: {id: 2150088, subdomain: 'test'},
+  subscriptions: [{id: 1}, {id: 2}, {id: 3}],
 };
 
 // Shaped after a real response: the endpoint answers with the page of subscribers plus `count`,
@@ -227,6 +289,41 @@ export function createMswServer() {
     });
   }
 
+  function draftUpdateHandler(responder) {
+    return http.put(`${DRAFTS_URL}/:id`, async ({request, params}) => {
+      await record(request);
+      return responder(params.id);
+    });
+  }
+
+  function draftDeleteHandler(responder) {
+    return http.delete(`${DRAFTS_URL}/:id`, async ({request, params}) => {
+      await record(request);
+      return responder(params.id);
+    });
+  }
+
+  function publishDraftHandler(responder) {
+    return http.post(`${DRAFTS_URL}/:id/publish`, async ({request, params}) => {
+      await record(request);
+      return responder(params.id);
+    });
+  }
+
+  function publicationHandler(responder) {
+    return http.get(PUBLICATION_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
+  function userProfileHandler(responder) {
+    return http.get(USER_PROFILE_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
   function statsHandler(url, responder) {
     return http.get(url, async ({request}) => {
       await record(request);
@@ -288,6 +385,11 @@ export function createMswServer() {
     subscriberStatsHandler(() => HttpResponse.json(SUBSCRIBER_STATS_RESPONSE, {status: 200})),
     postsHandler(() => HttpResponse.json(POSTS_RESPONSE, {status: 200})),
     draftDetailHandler(() => HttpResponse.json(DRAFT_DETAIL_RESPONSE, {status: 200})),
+    draftUpdateHandler(() => HttpResponse.json(DRAFT_RESPONSE, {status: 200})),
+    draftDeleteHandler(() => HttpResponse.json({}, {status: 200})),
+    publishDraftHandler(() => HttpResponse.json(PUBLISHED_POST_RESPONSE, {status: 200})),
+    publicationHandler(() => HttpResponse.json(PUBLICATION_RESPONSE, {status: 200})),
+    userProfileHandler(() => HttpResponse.json(USER_PROFILE_RESPONSE, {status: 200})),
     statsHandler(DASHBOARD_SUMMARY_URL, () => HttpResponse.json(DASHBOARD_SUMMARY_RESPONSE, {status: 200})),
     statsHandler(OPEN_RATE_URL, () => HttpResponse.json(OPEN_RATE_RESPONSE, {status: 200})),
     statsHandler(VIEWS_30D_URL, () => HttpResponse.json(VIEWS_30D_RESPONSE, {status: 200})),
@@ -312,6 +414,11 @@ export function createMswServer() {
     subscriberStatsHandler,
     postsHandler,
     draftDetailHandler,
+    draftUpdateHandler,
+    draftDeleteHandler,
+    publishDraftHandler,
+    publicationHandler,
+    userProfileHandler,
     statsHandler,
     postStatsHandler,
     analyticsHandler,

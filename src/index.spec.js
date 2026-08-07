@@ -132,13 +132,18 @@ describe('entrypoint — stdio transport', () => {
 
     assert.deepEqual(Object.keys(byName).sort(), [
       'create_draft_post',
+      'delete_draft',
       'export_subscribers',
       'get_analytics',
       'get_draft',
       'get_post_stats',
+      'get_publication',
       'get_publication_stats',
+      'get_user_profile',
       'list_posts',
       'list_subscribers',
+      'publish_draft',
+      'update_draft',
     ]);
 
     assert.deepEqual(

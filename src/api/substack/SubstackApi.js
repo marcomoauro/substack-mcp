@@ -77,6 +77,19 @@ export default class SubstackApi {
   }
 
   /**
+   * The same as `request`, but against `substack.com/api/v1` instead of the publication host.
+   *
+   * Substack splits its API across two hosts and the split is not cosmetic: the publisher surface
+   * (drafts, subscribers, stats) lives on the publication, while everything about *you as a
+   * person* — your profile, your subscriptions, the reader feed, Notes and comment threads — lives
+   * on substack.com and is keyed by user id rather than publication id. Calling one on the other's
+   * host answers 404, so which base a method uses is part of the endpoint, not a detail.
+   */
+  async requestGlobal({method, path, ...options}) {
+    return this.requestUrl({url: `${this.base_url}${path}`, method, ...options});
+  }
+
+  /**
    * The same as `request`, but taking an absolute url.
    *
    * Needed because the subscriber export answers with a url relative to the publication *host*
@@ -173,6 +186,61 @@ export default class SubstackApi {
 
   async getDraft(draft_id) {
     return this.request({method: 'GET', path: `/drafts/${draft_id}`, referer: '/publish/post'});
+  }
+
+  /**
+   * Applies a partial update to a draft: only the keys present in `body` change, the rest are left
+   * as they are. Verified against the live API — a PUT carrying nothing but `draft_title` and
+   * `draft_subtitle` updated exactly those two and preserved the body.
+   */
+  async updateDraft(draft_id, body) {
+    return this.request({
+      method: 'PUT',
+      path: `/drafts/${draft_id}`,
+      body,
+      referer: '/publish/post',
+    });
+  }
+
+  /**
+   * Deletes a draft. The endpoint is shared with published posts — the same DELETE removes one —
+   * which is why `delete_draft` refuses an `is_published` target rather than exposing that reach.
+   */
+  async deleteDraft(draft_id) {
+    return this.request({
+      method: 'DELETE',
+      path: `/drafts/${draft_id}`,
+      referer: '/publish/posts',
+    });
+  }
+
+  /**
+   * Publishes a draft. `send` controls whether subscribers get the email — the irreversible half of
+   * the operation, since an email cannot be recalled once out.
+   *
+   * UNVERIFIED against the live API: the path and body come from a fork's working code, and the
+   * only honest way to confirm them is to publish something real. Everything else in this class was
+   * checked against a request first; this one was deliberately not.
+   */
+  async publishDraft(draft_id, {send = true, share_automatically = false} = {}) {
+    return this.request({
+      method: 'POST',
+      path: `/drafts/${draft_id}/publish`,
+      body: {send, share_automatically},
+      referer: '/publish/post',
+    });
+  }
+
+  async getPublication() {
+    return this.request({method: 'GET', path: '/publication', referer: '/publish/settings'});
+  }
+
+  /**
+   * Your own account, on substack.com rather than the publication: id, handle, bio, and the
+   * `publicationUsers` list that names every publication you have a role on.
+   */
+  async getUserProfile() {
+    return this.requestGlobal({method: 'GET', path: '/user/profile/self', referer: '/'});
   }
 
   /**

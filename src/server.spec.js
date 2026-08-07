@@ -39,13 +39,18 @@ describe('MCP server — list_tools', () => {
 
   const EXPECTED_TOOLS = [
     'create_draft_post',
+    'delete_draft',
     'export_subscribers',
     'get_analytics',
     'get_draft',
     'get_post_stats',
+    'get_publication',
     'get_publication_stats',
+    'get_user_profile',
     'list_posts',
     'list_subscribers',
+    'publish_draft',
+    'update_draft',
   ];
 
   test('exposes exactly the registered tools', async () => {

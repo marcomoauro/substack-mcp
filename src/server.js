@@ -7,6 +7,11 @@ import {getDraftSchema, getDraftHandler} from "./tools/get_draft.js";
 import {getPublicationStatsSchema, getPublicationStatsHandler} from "./tools/get_publication_stats.js";
 import {getAnalyticsSchema, getAnalyticsHandler} from "./tools/get_analytics.js";
 import {getPostStatsSchema, getPostStatsHandler} from "./tools/get_post_stats.js";
+import {updateDraftSchema, updateDraftHandler} from "./tools/update_draft.js";
+import {deleteDraftSchema, deleteDraftHandler} from "./tools/delete_draft.js";
+import {publishDraftSchema, publishDraftHandler} from "./tools/publish_draft.js";
+import {getPublicationSchema, getPublicationHandler} from "./tools/get_publication.js";
+import {getUserProfileSchema, getUserProfileHandler} from "./tools/get_user_profile.js";
 import {logger} from "./logger.js";
 
 export const tools = {
@@ -56,6 +61,46 @@ export const tools = {
       "audience and email settings. Take the id from list_posts or create_draft_post.",
     schema: getDraftSchema,
     handler: getDraftHandler,
+  },
+  update_draft: {
+    description:
+      "Change the title, subtitle or audience of an existing draft. The update is partial: only the " +
+      "fields you pass change, everything else — including the body — is left alone. Take the id " +
+      "from list_posts or create_draft_post.",
+    schema: updateDraftSchema,
+    handler: updateDraftHandler,
+  },
+  publish_draft: {
+    description:
+      "Publish a draft. The post goes live on the web; `send` additionally emails it to subscribers " +
+      "and defaults to false, because an email cannot be recalled. Publishing cannot be undone from " +
+      "this server — there is no unpublish tool.",
+    schema: publishDraftSchema,
+    handler: publishDraftHandler,
+  },
+  delete_draft: {
+    description:
+      "Delete an unpublished draft. Refuses if the id belongs to a published post: Substack deletes " +
+      "both through the same endpoint, and removing a live post is irreversible, so that is left to " +
+      "the dashboard.",
+    schema: deleteDraftSchema,
+    handler: deleteDraftHandler,
+  },
+  get_publication: {
+    description:
+      "Read the settings and identity of your Substack publication: name, subdomain, custom domain, " +
+      "hero text, copyright, sender name, logo, plans and payment state. Returns a projection by " +
+      "default; pass full: true for all 111 fields.",
+    schema: getPublicationSchema,
+    handler: getPublicationHandler,
+  },
+  get_user_profile: {
+    description:
+      "Read the account behind the session: id, handle, name, bio, and every publication you have a " +
+      "role on. This is how to discover which publications the session can reach, beyond the one " +
+      "SUBSTACK_PUBLICATION_URL points at.",
+    schema: getUserProfileSchema,
+    handler: getUserProfileHandler,
   },
   get_publication_stats: {
     description:

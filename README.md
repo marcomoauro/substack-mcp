@@ -112,6 +112,73 @@ There is no paging: an export covers the whole matching set.
 </details>
 
 <details>
+<summary><strong>update_draft</strong> - Change a draft's title, subtitle or audience</summary>
+
+The update is **partial**: only the fields you pass change, and the body is left alone.
+
+**Inputs**:
+- `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
+- `draft_title` (string, optional)
+- `draft_subtitle` (string, optional)
+- `audience` (`everyone` | `only_paid` | `founding`, optional)
+
+**Returns**: `{draft_id, updated_fields, draft_title, draft_subtitle, audience, is_published}`.
+A call with no field to change is refused rather than sent as a no-op.
+</details>
+
+<details>
+<summary><strong>publish_draft</strong> - Publish a draft</summary>
+
+**Inputs**:
+- `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
+- `send` (boolean, optional): email the post to subscribers. **Defaults to `false`**, unlike the
+  Substack API's own default — the post goes live on the web either way, but an email cannot be
+  recalled, so it has to be asked for explicitly.
+- `share_automatically` (boolean, optional): let Substack auto-share to Notes. Defaults to `false`.
+
+**Returns**: `{status, draft_id, post_id, title, slug, canonical_url, emailed, shared_automatically}`.
+
+There is no unpublish tool: publishing cannot be undone from this server.
+</details>
+
+<details>
+<summary><strong>delete_draft</strong> - Delete an unpublished draft</summary>
+
+**Inputs**:
+- `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
+
+**Returns**: `{status, draft_id, draft_title}`.
+
+Substack deletes drafts and published posts through the *same* endpoint, so this tool reads the
+target first and **refuses if it is published** — removing a live post is irreversible and is left
+to the dashboard.
+</details>
+
+<details>
+<summary><strong>get_publication</strong> - Read your publication's settings</summary>
+
+**Inputs**:
+- `full` (boolean, optional): return all 111 fields (~24 KB) instead of the projection.
+  Defaults to `false`.
+
+**Returns**: by default a projection — name, subdomain, custom domain, hero text, copyright, sender
+name, logo, plans, payment state and the community/podcast flags — plus `_meta` naming how many
+fields were dropped. The full payload is mostly notification toggles and the raw HTML of the welcome
+email, terms and privacy pages.
+</details>
+
+<details>
+<summary><strong>get_user_profile</strong> - Read the account behind the session</summary>
+
+**Inputs**:
+- `full` (boolean, optional): include the complete `subscriptions` array. Defaults to `false`.
+
+**Returns**: `{id, name, handle, bio, photo_url, publications, primary_publication_id,
+subscription_count}`. `publications` lists every publication the session has a role on, which is how
+to discover that `SUBSTACK_PUBLICATION_URL` is not the only one it could be pointed at.
+</details>
+
+<details>
 <summary><strong>get_publication_stats</strong> - Read the headline stats</summary>
 
 **Inputs**: none.
