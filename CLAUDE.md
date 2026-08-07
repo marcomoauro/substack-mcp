@@ -45,7 +45,8 @@ the tally, `grep -E '^(not ok|✖)'` for what broke.
 - `src/server.js` — `createServer()` factory plus the `tools` registry. **No side effects at
   import time**: no env reads, no transport connection. Tests depend on this.
 - `src/tools/<name>.js` — one file per MCP tool, exporting a zod schema and a handler.
-- `src/api/substack/` — `SubstackApi` (HTTP) and `SubstackPost` (ProseMirror document builder).
+- `src/api/substack/` — `SubstackApi` (HTTP), `SubstackPost` (ProseMirror document builder) and
+  `SubscriberQuery` (the subscriber filter DSL).
 - `src/logger.js` — the only place that writes a log line. No dependencies, no state.
 - `test/helpers/` — shared test helpers only; no tests live here.
 
@@ -56,6 +57,45 @@ from what was registered, so there is no second place to update and nothing that
 Do not add `setRequestHandler` calls for `tools/list` or `tools/call`: registering a tool
 already covers both, and the SDK guards the clash rather than letting it slide — it throws
 `A request handler for tools/call already exists, which would be overridden`.
+
+## Substack's private API
+
+There is no public documentation for any of this. Every endpoint below was read off the publisher
+dashboard's own traffic and its `reactPublish.*.js` bundle, then confirmed against the live API —
+so **check behaviour against a real request before trusting a claim about it**, including the
+claims here. An official, key-authenticated Publisher API exists (`publisher_api_enabled`,
+`/api/v1/publisher_api/api_key`) but is gated: the key endpoint answers **403** on a publication
+that does not have it. If it ever opens up it is a better foundation than a session cookie.
+
+**`POST /api/v1/subscriber-stats` is the whole subscriber surface** — list, filter, sort and search
+in one call. `src/api/substack/SubscriberQuery.js` owns the translation, and the reasons it exists
+rather than passing arguments straight through:
+
+- A filter is a **flat key** inside `filters`: column name with an operator suffix glued on
+  (`num_comments_gt`). Multiple keys are ANDed. **No OR, no nesting** — an OR needs separate calls.
+- **The suffix depends on the column's type**, and the API answers every mismatch with a bare 400
+  that names neither the column nor the alternatives. `is not` is `_not` on `subscription_type`,
+  `_distinct_from` on an Int or `group_membership`, and `_string_not` on a String. `_lte` is
+  Int-only; the DateTime equivalent is `_is_on_or_before`, not `_lte`. So the tool exposes operators
+  named by intent and derives the suffix, which makes an illegal pair unrepresentable rather than a
+  round trip away.
+- **`search` goes inside `filters`.** At the top level it is ignored *silently* and the response
+  comes back unfiltered — which reads as "search matched everything", not as an error.
+- **Sorting is two different keys**: `order_by` ascending, `order_by_desc_nulls_last` descending.
+- **The API validates enum values too**, so `subscription_type: 'premium'` is a 400. The valid sets
+  are `paid|free|founding|comp|gift|free_trial|iap` and `none|member|admin`.
+- `count` is the total matching the filters regardless of `limit`, which makes `limit: 1` a cheap
+  way to size a segment.
+- **A request-level `columnView` is ignored.** The returned fields come from the publication's saved
+  Display settings, so the engagement columns are *filterable but not readable* — the tool's
+  description says so, because a caller filtering on opens and then not finding them would
+  reasonably conclude the data is missing rather than unrequestable.
+
+**`GET /api/v1/post_management/{drafts,published,scheduled}`** lists posts. `order_by` is **not
+optional**: `scheduled` answers 400 without it, which is why `src/tools/list_posts.js` keeps a
+default per status rather than letting the server choose. Free-text search is `query`, and a null
+one must never be serialized — `query=null` searches for the literal string. `GET /api/v1/drafts/:id`
+returns a single draft whole.
 
 ## Logging
 

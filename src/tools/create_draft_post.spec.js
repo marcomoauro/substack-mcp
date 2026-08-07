@@ -35,8 +35,33 @@ describe('createDraftPostSchema', () => {
 });
 
 describe('createDraftPostHandler — success', () => {
-  test('returns OK', async () => {
-    assert.equal(await createDraftPostHandler(VALID_ARGS), 'OK');
+  // It used to answer 'OK', which told the caller the draft existed but gave it no handle on it:
+  // the id reached only the log, on stderr, where the model cannot see it. get_draft therefore
+  // had no way in except a list_posts round trip.
+  test('returns the id of the draft it created', async () => {
+    assert.deepEqual(await createDraftPostHandler(VALID_ARGS), {
+      draft_id: 167712345,
+      is_published: false,
+    });
+  });
+
+  test('reports the id the API actually assigned, not a fixed one', async () => {
+    msw.server.use(
+      msw.draftsHandler(() => HttpResponse.json({id: 42, is_published: false}, {status: 200}))
+    );
+
+    assert.equal((await createDraftPostHandler(VALID_ARGS)).draft_id, 42);
+  });
+
+  // A response without an id would otherwise yield `undefined`, which JSON.stringify drops from
+  // the result entirely — the caller would see a success carrying no id and no explanation.
+  test('reports a null id rather than omitting it when the API sends none', async () => {
+    msw.server.use(msw.draftsHandler(() => HttpResponse.json({}, {status: 200})));
+
+    assert.deepEqual(await createDraftPostHandler(VALID_ARGS), {
+      draft_id: null,
+      is_published: false,
+    });
   });
 
   test('sends exactly one request to the drafts endpoint', async () => {

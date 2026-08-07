@@ -24,72 +24,94 @@ after(() => {
 const VALID_ARGS = {title: 'Title', subtitle: 'Subtitle', body: 'Body'};
 
 describe('MCP server — list_tools', () => {
-  test('exposes create_draft_post with its description', async () => {
+  // Indexed by name rather than position: the registry is an object, and asserting on tools[0]
+  // makes every one of these tests depend on the declaration order of an unrelated tool.
+  async function listToolsByName() {
     const {client, close} = await connectMcpClient();
 
     try {
       const {tools} = await client.listTools();
-
-      assert.equal(tools.length, 1);
-      assert.equal(tools[0].name, 'create_draft_post');
-      assert.equal(tools[0].description, 'create a draft post on your Substack account.');
+      return Object.fromEntries(tools.map((tool) => [tool.name, tool]));
     } finally {
       await close();
     }
+  }
+
+  const EXPECTED_TOOLS = [
+    'create_draft_post',
+    'get_draft',
+    'get_publication_stats',
+    'list_posts',
+    'list_subscribers',
+  ];
+
+  test('exposes exactly the registered tools', async () => {
+    const tools = await listToolsByName();
+
+    assert.deepEqual(Object.keys(tools).sort(), EXPECTED_TOOLS);
   });
 
-  test('publishes an inputSchema with the three required fields', async () => {
-    const {client, close} = await connectMcpClient();
+  test('every tool carries a description', async () => {
+    const tools = await listToolsByName();
 
-    try {
-      const {tools} = await client.listTools();
-      const {inputSchema} = tools[0];
-
-      assert.equal(inputSchema.type, 'object');
-      assert.deepEqual(Object.keys(inputSchema.properties).sort(), ['body', 'subtitle', 'title']);
-      assert.deepEqual([...inputSchema.required].sort(), ['body', 'subtitle', 'title']);
-      assert.equal(inputSchema.properties.title.type, 'string');
-    } finally {
-      await close();
+    for (const name of EXPECTED_TOOLS) {
+      assert.ok(tools[name].description, `${name} should carry a description`);
     }
+
+    assert.equal(tools.create_draft_post.description, 'create a draft post on your Substack account.');
+  });
+
+  test('create_draft_post publishes an inputSchema with the three required fields', async () => {
+    const {inputSchema} = (await listToolsByName()).create_draft_post;
+
+    assert.equal(inputSchema.type, 'object');
+    assert.deepEqual(Object.keys(inputSchema.properties).sort(), ['body', 'subtitle', 'title']);
+    assert.deepEqual([...inputSchema.required].sort(), ['body', 'subtitle', 'title']);
+    assert.equal(inputSchema.properties.title.type, 'string');
   });
 
   // Regression guard for the zod 3 -> 4 migration: zod-to-json-schema silently returned a
   // bare `{$schema}` for a zod 4 schema instead of throwing, which would have published a
   // parameterless tool. Asserting the descriptions — the part an LLM actually reads to fill
   // the arguments — is what makes a degraded-but-structurally-valid schema fail here.
-  test('every property carries the description the LLM relies on', async () => {
-    const {client, close} = await connectMcpClient();
+  test('every property of every tool carries the description the LLM relies on', async () => {
+    const tools = await listToolsByName();
 
-    try {
-      const {tools} = await client.listTools();
-      const {properties} = tools[0].inputSchema;
-
-      for (const [name, property] of Object.entries(properties)) {
-        assert.equal(property.type, 'string', `${name} should be a string`);
-        assert.ok(property.description, `${name} should carry a description`);
+    for (const name of EXPECTED_TOOLS) {
+      for (const [property, definition] of Object.entries(tools[name].inputSchema.properties ?? {})) {
+        assert.ok(definition.description, `${name}.${property} should carry a description`);
       }
+    }
 
-      assert.match(properties.body.description, /plain text|JSON string/);
-    } finally {
-      await close();
+    const {properties} = tools.create_draft_post.inputSchema;
+    assert.match(properties.body.description, /plain text|JSON string/);
+  });
+
+  test('every inputSchema is a draft-07 document that closes the object', async () => {
+    const tools = await listToolsByName();
+
+    for (const name of EXPECTED_TOOLS) {
+      const {inputSchema} = tools[name];
+
+      assert.equal(inputSchema.$schema, 'http://json-schema.org/draft-07/schema#', name);
+      // Accurate only because the schemas are strictObjects: a plain z.object strips unknown
+      // keys instead of rejecting them, and would publish this as an empty promise.
+      assert.equal(inputSchema.additionalProperties, false, name);
     }
   });
 
-  test('the inputSchema is a draft-07 document that closes the object', async () => {
-    const {client, close} = await connectMcpClient();
+  // The 48 column names reach the model only through this enum. If the schema ever published
+  // `column` as a bare string the tool would still work for a caller that already knows the
+  // names, and be unusable for one that does not.
+  test('list_subscribers publishes the filterable columns as an enum', async () => {
+    const {inputSchema} = (await listToolsByName()).list_subscribers;
+    const {column, operator} = inputSchema.properties.filters.items.properties;
 
-    try {
-      const {tools} = await client.listTools();
-      const {inputSchema} = tools[0];
-
-      assert.equal(inputSchema.$schema, 'http://json-schema.org/draft-07/schema#');
-      // Accurate only because the schema is a strictObject: a plain z.object strips unknown
-      // keys instead of rejecting them, and would publish this as an empty promise.
-      assert.equal(inputSchema.additionalProperties, false);
-    } finally {
-      await close();
-    }
+    assert.equal(column.enum.length, 48);
+    assert.ok(column.enum.includes('num_email_opens_last_30d'));
+    assert.ok(column.enum.includes('subscription_type'));
+    assert.ok(operator.enum.includes('is_any_of'));
+    assert.ok(operator.enum.includes('is_on_or_before'));
   });
 });
 
@@ -100,7 +122,10 @@ describe('MCP server — call_tool', () => {
     try {
       const result = await client.callTool({name: 'create_draft_post', arguments: VALID_ARGS});
 
-      assert.deepEqual(result.content, [{type: 'text', text: '"OK"'}]);
+      // Serialized by the server, so the id arrives as JSON text rather than an object.
+      assert.deepEqual(result.content, [
+        {type: 'text', text: JSON.stringify({draft_id: 167712345, is_published: false}, null, 2)},
+      ]);
     } finally {
       await close();
     }
@@ -247,7 +272,7 @@ describe('MCP server — call_tool', () => {
 
       const success = find(lines, 'tool.call.success');
       assert.equal(success.tool, 'create_draft_post');
-      assert.equal(success.result, 'OK');
+      assert.deepEqual(success.result, {draft_id: 167712345, is_published: false});
       assert.equal(typeof success.duration_ms, 'number');
     });
 

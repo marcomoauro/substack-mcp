@@ -96,5 +96,12 @@ export const createDraftPostHandler = async (args) => {
     is_published: response?.is_published ?? null,
   });
 
-  return 'OK'
+  // The id, not 'OK': it is what get_draft needs, and returning it is the only way the model can
+  // reach the draft it just created — the log line above goes to stderr, where the model cannot
+  // see it. `?? null` rather than leaving it undefined, which JSON.stringify would drop from the
+  // result, reporting success while silently carrying no id at all.
+  return {
+    draft_id: response?.id ?? null,
+    is_published: response?.is_published ?? false,
+  }
 }
