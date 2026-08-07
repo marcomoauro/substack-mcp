@@ -77,7 +77,7 @@ There is no OR and no nesting: anything needing OR has to be issued as separate 
 <summary><strong>get_draft</strong> - Read one draft in full</summary>
 
 **Inputs**:
-- `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
+- `draft_id` (number): the id returned by `list_posts`
 
 **Returns**: the draft as Substack stores it, body and audience/email settings included.
 </details>

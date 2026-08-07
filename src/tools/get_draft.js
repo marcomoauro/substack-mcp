@@ -10,7 +10,7 @@ export const getDraftSchema = z.strictObject({
     .number()
     .int()
     .describe(
-      "The numeric id of the draft, as returned in the `id` field by list_posts or create_draft_post."
+      "The numeric id of the draft, as returned in the `id` field by list_posts."
     ),
 });
 
