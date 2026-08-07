@@ -37,7 +37,7 @@ The installation process is standardized across all MCP clients. It involves man
 
 <summary><strong>Option 1: Using NPX</strong></summary>
 
-This option requires Node.js to be installed on your system.
+This option requires Node.js 22 or newer to be installed on your system.
 
 1. Add the following to your MCP configuration file:
 ```json

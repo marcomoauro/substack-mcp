@@ -218,8 +218,13 @@ describe('entrypoint — logging', () => {
     assert.equal(start.tool, 'create_draft_post');
     assert.equal(start.args.title, 'A title');
     assert.equal(typeof failed.duration_ms, 'number');
-    // The stack is the part the client never sees: it exists only in the log.
-    assert.match(error.error.stack, /SubstackApi/);
+    // The detail behind the failure is the part the client never sees: it exists only in the
+    // log. `fetch` rejects with a bare `TypeError: fetch failed` whose stack has no frames of
+    // its own on Node 24 — every actionable byte hangs off `cause`, so that is what has to
+    // reach the log for a transport failure to be diagnosable at all.
+    assert.equal(error.error.message, 'fetch failed');
+    assert.ok(error.error.cause, 'the cause must be logged, or the line says only that it failed');
+    assert.match(error.error.cause.stack, /\n\s+at /, 'the cause must carry stack frames');
   });
 
   test('SUBSTACK_MCP_LOG_LEVEL=silent produces no output while the server still works', async () => {

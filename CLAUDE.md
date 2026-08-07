@@ -1,8 +1,21 @@
 # CLAUDE.md
 
-MCP server exposing Substack automation to LLM clients. ESM, npm. Development and CI run on
-Node 22 (`.nvmrc`, `Dockerfile`); `engines` declares `>=18`, the floor imposed by native
-`fetch` — do not use APIs newer than that in `src/`.
+MCP server exposing Substack automation to LLM clients. ESM, npm. Development, CI and the image
+run **Node 24** — `.nvmrc` and `Dockerfile` pin `24.19.0` exactly — while `engines` declares
+`>=22`, so `src/` may use nothing newer than Node 22 offers.
+
+That floor is deliberate, not inherited: 22 is the oldest Node line still receiving security
+patches (18 went EOL 2025-04-30, 20 on 2026-04-30), and it is the lowest version every
+production dependency accepts — `@hono/node-server` asks for `>=20`, everything else `>=18`.
+Raising it breaks anyone running `npx substack-mcp@latest` on an older runtime, so it is a major
+bump; the honest ceiling is the oldest supported LTS, not the version that happens to be
+installed locally.
+
+**Two CI jobs run the suite: one on `.nvmrc`, one on the floor.** The floor job derives its
+version from `engines` (`node -p "require('./package.json').engines.node.match(/\d+/)[0]"`)
+rather than repeating it, so the promise and the test cannot drift. Developing two majors above
+the floor is precisely how an unexercised `engines` rots into a lie — the runtime differences
+are real and silent, as the `fetch` stack below shows.
 
 ## Language
 
@@ -20,8 +33,11 @@ used in the chat: do not mirror the conversation language into the codebase.
 | `npm run test:coverage` | Coverage report, spec files excluded |
 | `npm pack --dry-run` | Verify what ships to npm |
 
-`npm test` prints ~860 lines of TAP for a suite that runs in under a second. Pipe it through
-`grep -E '^# (pass|fail)'` for just the tally, and `grep -E '^not ok'` to find what broke.
+`npm test` runs in under a second, but **its output shape depends on the Node version**: on 24 it
+is the spec reporter (tally `ℹ pass`, failures marked `✖`), on the 22 floor it is TAP — five times
+noisier, tally `# pass`, failures `not ok`. Grep for both, or a perfectly green run on the wrong
+version comes back empty and reads as a broken command: `grep -E '^(#|ℹ) (tests|pass|fail)'` for
+the tally, `grep -E '^(not ok|✖)'` for what broke.
 
 ## Layout
 
@@ -68,9 +84,16 @@ made, the outcome. `src/logger.js` is the only writer — never `console.log`.
   survives: one bit cannot leak a credential, while redacting it turns the useful part of the
   line into `***` — `has_auth_token: Boolean(auth_token)` logged as `"***"`, stating only that
   the field exists, is a bug this repo has already shipped once.
-- The logger never throws: `Error` values are expanded to `{name, message, stack}` (raw, they
-  serialize to `{}`), cycles become `[Circular]`, and an unserializable payload degrades to a
-  `log_error` note.
+- The logger never throws: `Error` values are expanded to `{name, message, stack, cause?}` (raw,
+  they serialize to `{}`), cycles become `[Circular]`, and an unserializable payload degrades to
+  a `log_error` note.
+- **`cause` is expanded recursively, and on Node 24 it is the whole diagnosis.** Native `fetch`
+  rejects with `TypeError: fetch failed` whose stack has **no frames at all** — Node 22 still
+  attached the caller's async frames, which is why the Node 24 bump turned one entrypoint test
+  red. Everything actionable hangs off `.cause`, so `redact` follows the chain (through the same
+  redaction as any payload, since a cause is not a trusted container). Logging only
+  `{name, message, stack}` there yields a line stating that something failed and nothing about
+  what.
 - **A rejected tool call cannot be logged from inside the handler.** `McpServer` validates
   arguments itself and answers `Input validation error` before the handler runs, so
   `logOutgoingMessages(transport)` wraps `transport.send` to catch it — `warn` for anything
@@ -97,8 +120,11 @@ is not recorded in `msw.requests`.
 
 The exception is `src/index.spec.js`, which spawns the entrypoint as a child process: MSW runs
 in the test process and cannot intercept anything there. To exercise a failing request, point
-`SUBSTACK_PUBLICATION_URL` at `http://127.0.0.1:1` — the request gets logged, then fails with
-ECONNREFUSED without a packet leaving the machine.
+`SUBSTACK_PUBLICATION_URL` at `http://127.0.0.1:1` — the request gets logged, then fails without
+a packet leaving the machine. Port 1 is on the fetch spec's blocked-port list, so it never even
+reaches a connect: the rejection is `TypeError: fetch failed` with `cause.message` of
+`bad port`, not the ECONNREFUSED this file used to claim. Assert on the *shape* of that failure
+(a cause with frames), not on either message — both are runtime detail.
 
 Tests that pin *current* behaviour rather than desired behaviour carry a `CHARACTERIZATION`
 comment explaining why. If one fails, suspect the test before the source — that is the point
@@ -125,6 +151,10 @@ literals (`{a: 1}`, not `{ a: 1 }`).
 
 - **Dependencies are pinned exactly** — no `^` or `~` ranges anywhere. The project `.npmrc`
   sets `save-exact=true` so `npm install <pkg>` keeps it that way; do not add ranges by hand.
+- **npm 11 (bundled with Node 24) does not run dependency lifecycle scripts by default.** `npm ci`
+  prints an `allow-scripts` warning and skips msw's `postinstall`; the suite passes anyway,
+  because that script already swallows its own errors. Noise, not a failure — do not "fix" it by
+  approving scripts.
 - **`node --test` does not discover `*.spec.js`** with its default patterns. The npm scripts
   pass the glob `'src/**/*.spec.js'` explicitly; single quotes matter so Node expands it, not
   the shell.
@@ -201,4 +231,20 @@ reads as a diff:
 ```bash
 diff <(python3 -m json.tool --sort-keys <<< "$(sed -n '2p' before.txt)") \
      <(python3 -m json.tool --sort-keys <<< "$(sed -n '2p' after.txt)")
+```
+
+**Two runtimes, so verify at both ends of the range** when touching anything runtime-sensitive
+(`fetch`, errors, streams). CI does this on every push; locally nvm is a shell function, so a
+non-interactive shell has to source it first:
+
+```bash
+source ~/.nvm/nvm.sh && nvm exec --silent 22 npm test && nvm use && npm test
+```
+
+**The image is a shipped artifact the suite never touches.** After a base-image bump, confirm the
+runtime is what you think and that the server still answers — the probe above works unchanged
+with `docker run -i --rm -e … substack-mcp:check` in place of `node src/index.js`:
+
+```bash
+docker build -t substack-mcp:check . && docker run --rm --entrypoint node substack-mcp:check --version
 ```

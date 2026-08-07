@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Run test suite
+    name: Run test suite (development version)
     runs-on: ubuntu-latest
 
     steps:
@@ -19,6 +19,37 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  # `engines` is a promise to everyone installing via `npx`, and development happens two
+  # major versions above it. A floor no job exercises is how that promise silently rots —
+  # so run the same suite there too. The version is derived from package.json rather than
+  # written out here, so the two cannot drift apart.
+  test-engines-floor:
+    name: Run test suite (engines floor)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Read the declared engines floor
+        id: floor
+        run: |
+          FLOOR=$(node -p "require('./package.json').engines.node.match(/\d+/)[0]")
+          echo "package.json declares engines.node >=$FLOOR"
+          echo "version=$FLOOR" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.floor.outputs.version }}
           cache: 'npm'
 
       - name: Install dependencies

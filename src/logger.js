@@ -36,7 +36,26 @@ function currentLevel() {
  */
 function redact(value, seen = new WeakSet()) {
   if (value instanceof Error) {
-    return {name: value.name, message: value.message, stack: value.stack};
+    if (seen.has(value)) {
+      return '[Circular]';
+    }
+
+    seen.add(value);
+
+    // `cause` is not a nice-to-have: it is sometimes the only place the diagnosis exists.
+    // Native `fetch` rejects with `TypeError: fetch failed` whose stack carries *no frames*
+    // on Node 24 (on Node 22 it still had the caller's async frames), and the underlying
+    // network error — with its own message and stack — hangs off `.cause`. Dropping it leaves
+    // a line stating that something failed and nothing about what. It goes back through
+    // `redact` rather than being copied: a cause is an ordinary payload, secrets and all.
+    const expanded = {name: value.name, message: value.message, stack: value.stack};
+
+    if (value.cause !== undefined) {
+      expanded.cause = redact(value.cause, seen);
+    }
+
+    seen.delete(value);
+    return expanded;
   }
 
   if (value === null || typeof value !== 'object') {
