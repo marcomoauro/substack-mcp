@@ -74,11 +74,12 @@ Substack lacks. What Markdown *lacks* gets substituted upstream, inside the mode
 healthy prose. The post publishes with its paid section public and nothing anywhere says so — the
 exact silent-drop class CLAUDE.md documents five times over, except authored by us.
 
-### What strictness costs
+### What naive strictness would cost
 
-`digestPostEmbed` sits in 59 of 60 real posts and is not a node worth modelling. A schema that
-rejects unknown node types therefore **rejects 59 of 60 real documents**, killing any
-read-modify-write flow on the first try. This is decided below, not left open.
+`digestPostEmbed` sits in 59 of 60 real posts. A schema modelling only the nodes a *writer* needs
+would therefore **reject 59 of 60 real documents**, killing any read-modify-write flow on the first
+try. The survey is what makes this fixable rather than a trade-off: it enumerates every type in use,
+so all of them get modelled and nothing has to be waved through.
 
 ## Architecture
 
@@ -106,27 +107,44 @@ This is the one place where "validate without publishing" is exactly right: publ
 model the vocabulary — worth 16 KB where structure is authored — while validating protects even where
 nothing was taught. Nothing new can enter this server unvalidated.
 
-### Node coverage and the permissive tail
+### Node coverage
 
 Modelled, with their verified shapes: `paragraph`, `heading`, `bullet_list`, `ordered_list`,
 `list_item`, `blockquote`, `highlighted_code_block`, `code_block` (legacy, accepted not encouraged),
 `horizontal_rule`, `captionedImage`/`image2`/`caption`, `button`, `paywall`. Marks: `strong`, `em`,
 `code`, `strikethrough`, `link`.
 
-Then two deliberate relaxations, each with its own reason:
+Then two deliberate choices, each with its own reason:
 
 - **`attrs` on a known node are permissive** (`looseObject`), so `textAlign: null` and `nodeId: null`
   survive a round trip untouched. Required attrs still guard: a heading missing `level` is an error,
   and a typo'd `levl` fails on the *absent* `level` rather than passing.
-- **An unknown node type is accepted, preserved verbatim, and named in the result** as
-  `passed_through`. Accepting it silently would hand back the silent-drop problem — a mistyped
-  `codeBlock` would sail through — so the report is what keeps the discriminated union's teeth. It is
-  the `unsupported` idea moved to the input side, where the earlier experiment proved it actually
-  fires.
+- **Every node type observed in the live archive is modelled**, so there is no generic passthrough
+  branch. The 60-post survey enumerates the whole set: `paragraph`, `heading`, `text`, `blockquote`,
+  `bullet_list`, `ordered_list`, `list_item`, `horizontal_rule`, `hard_break`, `code_block`,
+  `highlighted_code_block`, `captionedImage`, `image2`, `caption`, `button`, `paywall`,
+  `digestPostEmbed`, `substack_mentions`, `directMessage`. The three whose internals were never read —
+  `digestPostEmbed`, `substack_mentions`, `directMessage` — are modelled as a `looseObject` on their
+  literal `type`: everything else passes through preserved, which is enough for a round trip and
+  honest about knowing no more than that.
+
+  **A generic "unknown node" branch was tried and rejected on measurement.** Wrapping the union as
+  `z.union([known, looseObject({type: string})])` does keep a malformed `heading` out — but the only
+  issue reported becomes the generic branch's, so the caller is told "this is a modelled node, match
+  its shape" and never *which* field is wrong. That trades away the exact thing the discriminated
+  union was chosen for. Enumerating instead keeps every message sharp, and a genuinely new Substack
+  node then fails **loudly**, naming the types it could have been — visible, which is the opposite of
+  the silent drop this design exists to prevent.
+
+  The residual risk is stated rather than engineered away: the enumeration comes from 60 posts of one
+  publication, so a node this publication has never used — `youtube2`, a footnote, LaTeX, a poll —
+  blocks a round trip until it is added. Adding one is a line in the union, and the failure says so.
 
 ### At most one paywall, and we are the only ones enforcing it
 
-A document may carry **one** `paywall` node. Measured on 2026-08-07: a body with two paywalls is
+A document may carry **one** `paywall` node, enforced by a `.refine()` on the document. A refinement
+does **not** survive into the published JSON Schema — verified — so the rule is also stated in the
+`paywall` node's own `.describe()`, or a model would meet it only by failing. Measured on 2026-08-07: a body with two paywalls is
 accepted by `PUT /api/v1/drafts/:id` with a **200**, stored with both, and the editor then renders
 **both** as "Paid content below this line" — so neither the API nor the editor guards this, and which
 of the two actually cuts the post is undefined.
@@ -150,8 +168,8 @@ paywall. Nothing was illegal; something was missing, and legality has no opinion
 So `set_post_body` returns the shape of what it stored, not `'OK'`:
 
 ```
-{draft_id, nodes: {paragraph: 12, heading: 3, captionedImage: 1, button: 1, paywall: 1},
- passed_through: ['digestPostEmbed']}
+{draft_id, nodes: {paragraph: 12, heading: 3, captionedImage: 1, button: 1, paywall: 1,
+ digestPostEmbed: 1}}
 ```
 
 A caller that asked for a paywall can see whether there is one. This is the same reasoning that makes
@@ -176,8 +194,8 @@ including a two-deep nested list, and converting to draft-7 with a self-containe
 ## Testing
 
 `document.spec.js`, colocated and table-driven: every modelled node, marks nested inside list items
-and blockquotes, `attrs` passthrough, an unknown node type reaching `passed_through`, a second
-`paywall` rejected, the node tally counting what was stored, and the four error messages above pinned
+and blockquotes, `attrs` passthrough, each of the three opaque nodes accepted, a node type
+outside the enumeration rejected with the alternatives named, a second `paywall` rejected, the node tally counting what was stored, and the four error messages above pinned
 by wording — `src/server.spec.js` already pins validation wording on
 purpose, because a degraded message breaks nothing by itself and only an assertion catches it.
 
