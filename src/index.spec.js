@@ -135,6 +135,7 @@ describe('entrypoint — stdio transport', () => {
       'export_subscribers',
       'get_analytics',
       'get_draft',
+      'get_post_stats',
       'get_publication_stats',
       'list_posts',
       'list_subscribers',

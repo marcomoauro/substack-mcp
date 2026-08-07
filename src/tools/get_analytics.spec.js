@@ -33,7 +33,17 @@ describe('ANALYTICS_REPORTS', () => {
   // exist but answer 400 even for Substack's own dashboard — audience_insights/location and
   // visitor_sources — are deliberately absent, and must not be added back without re-checking.
   test('covers the verified reports and nothing else', () => {
-    assert.equal(Object.keys(ANALYTICS_REPORTS).length, 17);
+    assert.equal(Object.keys(ANALYTICS_REPORTS).length, 16);
+  });
+
+  // email_stats lives here no longer: despite the name it is the per-post table, not an aggregate,
+  // and it needs pagination and a sort over its own 43 fields. get_post_stats owns it. Two doors to
+  // the same data would leave a caller choosing between a full report and a crippled one.
+  test('does not expose email_stats, which get_post_stats owns', () => {
+    assert.equal(ANALYTICS_REPORTS.email_stats, undefined);
+
+    const paths = Object.values(ANALYTICS_REPORTS).map((report) => report.path);
+    assert.ok(!paths.includes('/publication/stats/email_stats'));
   });
 
   test('excludes the endpoints that are broken upstream', () => {
@@ -74,7 +84,7 @@ describe('getAnalyticsSchema', () => {
 
   test('rejects an unknown key by name', () => {
     assert.throws(
-      () => getAnalyticsSchema.parse({report: 'email_stats', period: 'month'}),
+      () => getAnalyticsSchema.parse({report: 'referrals_summary', period: 'month'}),
       (error) => /Unrecognized key/.test(error.message) && /period/.test(error.message)
     );
   });
@@ -127,9 +137,9 @@ describe('getAnalyticsHandler — routing', () => {
   });
 
   test('returns the payload under the report name it was asked for', async () => {
-    const result = await run({report: 'email_stats'});
+    const result = await run({report: 'referrals_summary'});
 
-    assert.equal(result.report, 'email_stats');
+    assert.equal(result.report, 'referrals_summary');
     assert.deepEqual(result.data, ANALYTICS_RESPONSE);
   });
 });
@@ -164,7 +174,7 @@ describe('getAnalyticsHandler — date windows', () => {
   // A report that takes no window must not receive one: an unexpected parameter is how several of
   // these endpoints answer 400.
   test('a report that takes no window is sent none', async () => {
-    await run({report: 'email_stats', from_date: '2026-01-01', to_date: '2026-03-31'});
+    await run({report: 'referrals_summary', from_date: '2026-01-01', to_date: '2026-03-31'});
 
     assert.equal(sentUrl().searchParams.has('from_date'), false);
     assert.equal(sentUrl().searchParams.has('to_date'), false);
@@ -237,7 +247,7 @@ describe('getAnalyticsHandler — ignored parameters', () => {
   // Silently dropping a parameter the caller believed in is the failure mode this project has hit
   // twice already, with columnView and with the export's dropped columns. Reporting it instead.
   test('names the parameters the chosen report does not accept', async () => {
-    const result = await run({report: 'email_stats', from_date: '2026-01-01', limit: 5});
+    const result = await run({report: 'referrals_summary', from_date: '2026-01-01', limit: 5});
 
     assert.deepEqual(result.ignored_params.sort(), ['from_date', 'limit']);
   });
@@ -291,25 +301,25 @@ describe('getAnalyticsHandler — errors and logging', () => {
   });
 
   test('records how much came back', async () => {
-    const lines = await captureLogs(() => run({report: 'email_stats'}));
+    const lines = await captureLogs(() => run({report: 'referrals_summary'}));
 
-    assert.equal(find(lines, 'get_analytics.done').report, 'email_stats');
+    assert.equal(find(lines, 'get_analytics.done').report, 'referrals_summary');
   });
 
   test('warns about parameters it had to ignore', async () => {
-    const lines = await captureLogs(() => run({report: 'email_stats', limit: 5}));
+    const lines = await captureLogs(() => run({report: 'referrals_summary', limit: 5}));
 
     assert.deepEqual(find(lines, 'get_analytics.params.ignored').ignored_params, ['limit']);
   });
 
   test('never writes the session token to the log', async () => {
-    const lines = await captureLogs(() => run({report: 'email_stats'}));
+    const lines = await captureLogs(() => run({report: 'referrals_summary'}));
 
     assert.doesNotMatch(JSON.stringify(lines), /test-session-token/);
   });
 
   test('says nothing at all when logging is silenced', async () => {
-    const lines = await captureLogs(() => run({report: 'email_stats'}), {level: 'silent'});
+    const lines = await captureLogs(() => run({report: 'referrals_summary'}), {level: 'silent'});
 
     assert.deepEqual(lines, []);
   });
