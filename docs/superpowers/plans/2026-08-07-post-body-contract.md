@@ -64,7 +64,7 @@ Create `src/api/substack/document.spec.js`:
 import {test, describe, before, after} from 'node:test';
 import assert from 'node:assert/strict';
 import {postBodySchema} from './document.js';
-import {setTestEnv} from '../../test/helpers/env.js';
+import {setTestEnv} from '../../../test/helpers/env.js';
 
 // setTestEnv is called even though this module reads no env var of its own: CLAUDE.md requires it
 // from every spec whose subject could log, and it keeps the reporter clean if that ever changes.
@@ -1035,7 +1035,7 @@ import {z} from 'zod';
 import {HttpResponse} from 'msw';
 import {setPostBodyHandler, setPostBodySchema} from './set_post_body.js';
 import {createMswServer, DRAFT_RESPONSE} from '../../test/helpers/msw-server.js';
-import {setTestEnv} from '../../test/helpers/env.js';
+import {setTestEnv} from '../../../test/helpers/env.js';
 import {captureLogs} from '../../test/helpers/capture-logs.js';
 
 const msw = createMswServer();
