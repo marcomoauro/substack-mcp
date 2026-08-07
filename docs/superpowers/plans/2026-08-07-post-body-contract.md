@@ -363,7 +363,9 @@ Expected: a non-zero count — every new test fails on the discriminator, which 
 
 - [ ] **Step 3: Add the recursive nodes**
 
-In `src/api/substack/document.js`, insert after `headingNode` and before `postBodySchema`:
+In `src/api/substack/document.js`, insert after `headingNode` and before `postBodySchema`. Note the
+node-level `.describe()` on each: the description test from Task 1 loops over every branch of the
+document union, so a node without one fails the suite.
 
 ```js
 // Recursion through getters, which is how zod 4 expresses it. The unions here stay discriminated
@@ -375,25 +377,25 @@ const listItemNode = z.strictObject({
     return z.array(z.discriminatedUnion('type', [paragraphNode, bulletListNode, orderedListNode]))
       .describe('A paragraph, plus a nested list for sub-items.');
   },
-});
+}).describe('One item of a list. Its text goes in a paragraph, never directly in the item.');
 
 const bulletListNode = z.strictObject({
   type: z.literal('bullet_list'),
   attrs: looseAttrs.optional(),
   get content() { return z.array(listItemNode); },
-});
+}).describe('A bulleted list.');
 
 const orderedListNode = z.strictObject({
   type: z.literal('ordered_list'),
-  attrs: z.looseObject({start: z.number().int().optional()}).optional()
+  attrs: looseAttrs.extend({start: z.number().int().optional()}).optional()
     .describe('Omit unless the list starts somewhere other than 1.'),
   get content() { return z.array(listItemNode); },
-});
+}).describe('A numbered list.');
 
 const blockquoteNode = z.strictObject({
   type: z.literal('blockquote'),
   get content() { return z.array(z.discriminatedUnion('type', [paragraphNode, bulletListNode, orderedListNode])); },
-});
+}).describe('A quotation. Holds paragraphs and lists, not bare text.');
 ```
 
 Then extend the document's union:
@@ -417,9 +419,7 @@ Expected: all pass.
 
 - [ ] **Step 5: Prove the nesting test can fail**
 
-Make `list_item` accept only paragraphs, so the nested case breaks:
-
-Swap the marker `list_item` accepts, so the nested case breaks. Reversible in place — do **not** use
+Make `list_item` accept only paragraphs, so the nested case breaks. Reversible in place — do **not** use
 `git checkout` here, it would discard this task's uncommitted work:
 
 ```bash
@@ -528,7 +528,7 @@ const codeBlockNode = z.strictObject({
     ),
   }).optional(),
   content: inlineContent.describe('One text node holding the whole snippet, newlines included.'),
-});
+}).describe('A syntax-highlighted code block.');
 
 const legacyCodeBlockNode = z.strictObject({
   type: z.literal('code_block'),
@@ -536,7 +536,8 @@ const legacyCodeBlockNode = z.strictObject({
   content: inlineContent,
 }).describe('The older code block, still present in existing posts. Use highlighted_code_block for new content.');
 
-const horizontalRuleNode = z.strictObject({type: z.literal('horizontal_rule')});
+const horizontalRuleNode = z.strictObject({type: z.literal('horizontal_rule')})
+  .describe('A horizontal divider.');
 
 const paywallNode = z.strictObject({type: z.literal('paywall')})
   .describe('Everything after this node is for paying subscribers only. At most one per document.');
