@@ -134,9 +134,14 @@ A call with no field to change is refused rather than sent as a no-op.
 - `send` (boolean, optional): email the post to subscribers. **Defaults to `false`**, unlike the
   Substack API's own default — the post goes live on the web either way, but an email cannot be
   recalled, so it has to be asked for explicitly.
-- `share_automatically` (boolean, optional): let Substack auto-share to Notes. Defaults to `false`.
 
-**Returns**: `{status, draft_id, post_id, title, slug, canonical_url, emailed, shared_automatically}`.
+**Returns**: `{status, draft_id, post_id, title, slug, canonical_url, emailed, email_sent_at}`.
+`emailed` is what was *asked* for; `email_sent_at` is the server's own record of whether it mailed.
+
+The email intent is written to the draft's `should_send_email` **before** publishing, as well as being
+passed on the publish call. That field is where the dashboard keeps the decision and it defaults to
+`true`, so setting only one of the two would risk mailing the whole list if the endpoint reads the
+draft rather than the request body.
 
 There is no unpublish tool: publishing cannot be undone from this server.
 </details>

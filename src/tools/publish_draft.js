@@ -19,10 +19,6 @@ export const publishDraftSchema = z.strictObject({
       "Whether to email the post to subscribers. Defaults to false: the post goes live on the web " +
       "either way, but an email cannot be unsent, so this must be asked for explicitly."
     ),
-  share_automatically: z
-    .boolean()
-    .default(false)
-    .describe("Whether Substack should auto-share the post to Notes on publish."),
 });
 
 export const publishDraftHandler = async (args) => {
@@ -38,24 +34,34 @@ export const publishDraftHandler = async (args) => {
     throw error;
   }
 
-  const {draft_id, send, share_automatically} = validatedArgs;
+  const {draft_id, send} = validatedArgs;
 
   const substack_api = new SubstackApi({
     publication_url: process.env.SUBSTACK_PUBLICATION_URL,
     auth_token: process.env.SUBSTACK_SESSION_TOKEN,
   });
 
+  // The email intent is written to the draft *before* publishing, in addition to being passed on the
+  // publish call. This is not belt-and-braces for its own sake: `should_send_email` is where the
+  // dashboard keeps the decision — its serializer computes `dontSendEmail` from it — and it defaults
+  // to `true` on a real draft. If the publish endpoint turns out to read the draft rather than the
+  // body, a request carrying only `send: false` would mail the entire list. Setting both makes the
+  // two possible behaviours agree, and the failure mode of the redundant write is nothing at all.
+  logger.info('publish_draft.setting_email_intent', {draft_id, should_send_email: send});
+  await substack_api.updateDraft(draft_id, {should_send_email: send});
+
   // Logged at info before the call, not only after: if the publish half-succeeds or the response is
   // never read, this line is the only record that something was made public and whether it mailed.
-  logger.info('publish_draft.publishing', {draft_id, send, share_automatically});
+  logger.info('publish_draft.publishing', {draft_id, send});
 
-  const post = await substack_api.publishDraft(draft_id, {send, share_automatically});
+  const post = await substack_api.publishDraft(draft_id, {send});
 
   logger.info('publish_draft.done', {
     draft_id,
     post_id: post?.id ?? null,
     is_published: post?.is_published ?? null,
     emailed: send,
+    email_sent_at: post?.email_sent_at ?? null,
   });
 
   return {
@@ -66,6 +72,8 @@ export const publishDraftHandler = async (args) => {
     slug: post?.slug ?? null,
     canonical_url: post?.canonical_url ?? null,
     emailed: send,
-    shared_automatically: share_automatically,
+    // The server's own record of whether it mailed, which is the only trustworthy answer — `emailed`
+    // above is what was *asked* for.
+    email_sent_at: post?.email_sent_at ?? null,
   };
 };

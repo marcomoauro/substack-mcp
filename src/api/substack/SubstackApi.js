@@ -218,15 +218,26 @@ export default class SubstackApi {
    * Publishes a draft. `send` controls whether subscribers get the email — the irreversible half of
    * the operation, since an email cannot be recalled once out.
    *
-   * UNVERIFIED against the live API: the path and body come from a fork's working code, and the
-   * only honest way to confirm them is to publish something real. Everything else in this class was
-   * checked against a request first; this one was deliberately not.
+   * The request is UNVERIFIED (confirming it means publishing something real), but the path and the
+   * `send` key are not guesses: the dashboard bundle builds this exact call as
+   * `post('/api/v1/drafts/' + id + '/publish').send({send: true, only_send: true})`, where
+   * `only_send` means "email an already-published post without republishing it".
+   *
+   * `share_automatically` — which the fork this was ported from sent — appears **zero** times in that
+   * bundle and is not sent here. An unexpected parameter is a 400 on several of this API's endpoints,
+   * so an invented key risks breaking the call outright.
+   *
+   * Whether the *initial* publish honours a body `send` or reads the draft's own
+   * `should_send_email` could not be determined without publishing, and that ambiguity is dangerous
+   * in one direction only: `should_send_email` is `true` by default on a real draft, so a body `send`
+   * that turns out to be ignored would mail the whole list. `publish_draft` therefore writes the
+   * intent to the draft first and passes `send` as well — see the tool.
    */
-  async publishDraft(draft_id, {send = true, share_automatically = false} = {}) {
+  async publishDraft(draft_id, {send = true} = {}) {
     return this.request({
       method: 'POST',
       path: `/drafts/${draft_id}/publish`,
-      body: {send, share_automatically},
+      body: {send},
       referer: '/publish/post',
     });
   }

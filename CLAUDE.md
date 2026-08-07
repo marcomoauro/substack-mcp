@@ -165,7 +165,22 @@ returns a single draft whole.
 **The draft lifecycle is four verbs on one path.** `POST /drafts`, `PUT /drafts/:id`,
 `POST /drafts/:id/publish`, `DELETE /drafts/:id` — all verified except publish, which cannot be
 confirmed without making something public. Two things follow from `DELETE` being shared with
-published posts: it removes a live post just as readily, so `delete_draft` spends a read to refuse an
+published posts:
+
+**Publishing: the email flag is on the draft, not only in the request.** The bundle builds the call as
+`post('/api/v1/drafts/' + id + '/publish').send({send: true, only_send: true})` — so the path and the
+`send` key are real, and `only_send` means "email an already-published post without republishing it".
+Two traps around it:
+
+- **`share_automatically` does not exist.** It appears **zero** times in the bundle; the fork sent it.
+  An unexpected parameter is a 400 on several of this API's endpoints, so an invented key is not free.
+- **`should_send_email` on the draft is where the dashboard keeps the decision** — its serializer
+  computes `dontSendEmail: !!email_sent_at || !should_send_email` — and it is **`true` by default** on
+  a real draft. Whether the initial publish honours a body `send` or reads that field cannot be
+  determined without publishing, and the ambiguity is dangerous in one direction only: a body `send`
+  that turns out to be ignored mails the entire list. `publish_draft` therefore PUTs the intent to the
+  draft *first* and passes `send` as well, so both possible behaviours agree. A failing PUT aborts —
+  publishing after the intent failed to save is the scenario the write exists to prevent. it removes a live post just as readily, so `delete_draft` spends a read to refuse an
 `is_published` target rather than exposing that reach behind a draft-shaped name. And `PUT` is
 genuinely partial — a body carrying only `draft_title` changed that and preserved the body — so an
 absent key must never be sent as null.
