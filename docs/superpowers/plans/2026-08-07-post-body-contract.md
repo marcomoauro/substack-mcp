@@ -52,8 +52,11 @@ Baseline before you begin: 590 tests passing.
 
 - **Every node and mark carries a `.describe()`.** The schema is published as a tool's JSON Schema and
   the descriptions are how a calling model learns the vocabulary — a node without one is invisible to
-  the caller. Task 1 adds a test that loops over every branch of the document union and asserts each
-  has a description, so a new node with no description **fails the suite**. That is deliberate.
+  the caller. Task 1 adds a test that walks the whole converted schema and asserts every branch of
+  every union, **nested ones included**, carries a description; a new node without one **fails the
+  suite** and is named in the assertion. That is deliberate, and the walk has to be recursive because
+  `list_item`, `image2` and `caption` are reachable only from inside another node, never as a
+  top-level branch.
 - **Pin what you add.** Before committing, mutate the thing you just wrote — swap a `strictObject` for
   `z.object`, drop a required field, widen a bound — grep to confirm the mutation landed, and check a
   test goes red. The Task 1 review found three surviving mutants in code that looked well tested.
@@ -364,8 +367,8 @@ Expected: a non-zero count — every new test fails on the discriminator, which 
 - [ ] **Step 3: Add the recursive nodes**
 
 In `src/api/substack/document.js`, insert after `headingNode` and before `postBodySchema`. Note the
-node-level `.describe()` on each: the description test from Task 1 loops over every branch of the
-document union, so a node without one fails the suite.
+node-level `.describe()` on each: the description test from Task 1 walks every union in the converted
+schema, nested ones included, so a node without one fails the suite and gets named.
 
 ```js
 // Recursion through getters, which is how zod 4 expresses it. The unions here stay discriminated
