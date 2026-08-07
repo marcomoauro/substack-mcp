@@ -1035,7 +1035,7 @@ import {z} from 'zod';
 import {HttpResponse} from 'msw';
 import {setPostBodyHandler, setPostBodySchema} from './set_post_body.js';
 import {createMswServer, DRAFT_RESPONSE} from '../../test/helpers/msw-server.js';
-import {setTestEnv} from '../../../test/helpers/env.js';
+import {setTestEnv} from '../../test/helpers/env.js';
 import {captureLogs} from '../../test/helpers/capture-logs.js';
 
 const msw = createMswServer();
