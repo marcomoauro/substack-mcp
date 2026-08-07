@@ -275,6 +275,18 @@ browser download, a broken Docker image, and a technique that breaks on Cloudfla
 Also skipped: `update_payment_settings` (paywall pricing from an LLM), deleting *published* posts,
 and a hand-maintained `list_resources` catalog — a second tool list that can drift from `tools/list`.
 
+**The forks are exhausted, and a re-survey costs more than it returns.** All eight were compared
+against `main` again on 2026-08-07, after #18: five are zero-commit snapshots, `adamhwoodworth`'s
+`fix-draft-body-double-encoding` is already merged as #4 (its two residual commits carry a `parseBody`
+test this repo has in English *plus* the logging assertions), and `jcllobet`'s reader work went in
+with #18. Only `jefflee1990710` still holds anything, and it is one coherent area rather than a list:
+**account and publication settings** — `PUT /api/v1/publication` (`name`, `hero_text`, `copyright`,
+`email_from_name`, `logo_url`), `PUT substack.com/api/v1/user/profile` (`name`, `bio`, `photo_url`),
+and the `POST substack.com/api/v1/image` upload both depend on, since per the fork an external url is
+stored but does not render. That upload is also the only route to an image *inside* a post, which
+nothing here can do. All three are unverified writes from the fork that invented `share_automatically`,
+so none of it ships without a live check first; they are open by choice, not by oversight.
+
 **Writes log their intent at `info` *before* the request**, not only their outcome —
 `publish_draft.publishing`, `comment_on_post.posting`, `restack_item.restacking`, with the full text
 where there is one. Nothing in this server can unpublish, delete a comment or undo a restack, so that
