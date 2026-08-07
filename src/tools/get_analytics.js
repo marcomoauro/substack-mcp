@@ -16,10 +16,6 @@ import {logger} from "../logger.js";
  * reports that answer 400 without one. `params` are fixed extras the dashboard always sends.
  */
 export const ANALYTICS_REPORTS = {
-  email_stats: {
-    path: '/publication/stats/email_stats',
-    description: 'Per-email delivery and open statistics for every send.',
-  },
   unsubscribes: {
     path: '/publication/stats/unsubscribes',
     window: 'date',

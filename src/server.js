@@ -6,6 +6,7 @@ import {listPostsSchema, listPostsHandler} from "./tools/list_posts.js";
 import {getDraftSchema, getDraftHandler} from "./tools/get_draft.js";
 import {getPublicationStatsSchema, getPublicationStatsHandler} from "./tools/get_publication_stats.js";
 import {getAnalyticsSchema, getAnalyticsHandler} from "./tools/get_analytics.js";
+import {getPostStatsSchema, getPostStatsHandler} from "./tools/get_post_stats.js";
 import {logger} from "./logger.js";
 
 export const tools = {
@@ -64,15 +65,30 @@ export const tools = {
     schema: getPublicationStatsSchema,
     handler: getPublicationStatsHandler,
   },
-  get_analytics: {
-    // One tool with a report enum rather than seventeen tools: the reports differ only in their
-    // path and a couple of parameters, and seventeen near-identical entries in tools/list would
-    // make the choice harder for a model rather than easier.
+  get_post_stats: {
+    // Its own tool rather than a get_analytics report: it is the only one that returns per-entity
+    // rows instead of an aggregate, it needs paging over 863 posts, and its sort key comes from its
+    // own 43-field vocabulary. Folding it in would have meant a report that cannot be sorted.
     description:
-      "Read one analytics report from your Substack publication, covering everything behind the " +
-      "dashboard's Stats tabs: cohort retention, unsubscribes and their reasons, growth sources, " +
-      "referrals, audience overlap with other Substacks, subscriber Notes, paid growth, and " +
-      "timeseries for subscribers, followers and ARR. Pick a report with `report`; the ones " +
+      "Rank the posts of your Substack publication by any of 43 per-post metrics. This is how to " +
+      "tell which post actually grew the list (signups, subscribes, free_to_paid_upgrades), which " +
+      "was worth most (estimated_value), which cost you subscribers (unsubscribes), and which " +
+      "people read to the end (subscribers_finished_post) — alongside delivery, opens, clicks, " +
+      "views and restacks. Covers the whole archive with paging. There is no date filter: the " +
+      "endpoint ignores one, so narrow by sorting and paging instead.",
+    schema: getPostStatsSchema,
+    handler: getPostStatsHandler,
+  },
+  get_analytics: {
+    // One tool with a report enum rather than sixteen tools: the reports differ only in their
+    // path and a couple of parameters, and sixteen near-identical entries in tools/list would
+    // make the choice harder for a model rather than easier. Per-post numbers are the exception and
+    // live in get_post_stats — they are rows, not aggregates, and need their own sort and paging.
+    description:
+      "Read one publication-level analytics report, covering the dashboard's Stats tabs: cohort " +
+      "retention, unsubscribes and their reasons, growth sources, referrals, audience overlap with " +
+      "other Substacks, subscriber Notes, paid growth, and timeseries for subscribers, followers " +
+      "and ARR. For per-post numbers use get_post_stats instead. Pick a report with `report`; the ones " +
       "covering a period accept from_date and to_date and otherwise default to the last 30 days.",
     schema: getAnalyticsSchema,
     handler: getAnalyticsHandler,

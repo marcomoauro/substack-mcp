@@ -103,6 +103,66 @@ export const OPEN_RATE_RESPONSE = {openRate: 0.42, openRateDiff: 0.01};
 export const VIEWS_30D_RESPONSE = {views30d: 5000, viewsDelta30d: 250};
 
 export const PUBLICATION_STATS_URL = `${API}/publication/stats`;
+export const EMAIL_STATS_URL = `${API}/publication/stats/email_stats`;
+
+/**
+ * Shaped after a real response: `email_stats` is the per-post table, not an aggregate, and `total`
+ * is the whole archive rather than the page. Ordered by `signups` descending here, which is what the
+ * live API actually returns for that sort.
+ */
+export const POST_STATS_RESPONSE = {
+  total: 863,
+  rows: [
+    {
+      post_id: 163262717,
+      title: 'MCP Server for Substack',
+      post_date: '2026-05-08T09:00:00.000Z',
+      audience: 'everyone',
+      type: 'newsletter',
+      sent: 1900,
+      delivered: 1880,
+      opens: 800,
+      open_rate: 0.42,
+      clicks: 120,
+      click_through_rate: 0.06,
+      signups: 42,
+      subscribes: 6,
+      estimated_value: 669.5023091726059,
+      unsubscribes: 1,
+      views: 3100,
+      likes: 30,
+      restacks: 4,
+      subscribers_finished_post: 610,
+      section_name: null,
+      tags: [],
+      bylines: [{id: 12345}],
+    },
+    {
+      post_id: 163262700,
+      title: 'How to Summarize Youtube Video using AI',
+      post_date: '2026-04-02T09:00:00.000Z',
+      audience: 'everyone',
+      type: 'newsletter',
+      sent: 1500,
+      delivered: 1490,
+      opens: 500,
+      open_rate: 0.33,
+      clicks: 60,
+      click_through_rate: 0.04,
+      signups: 27,
+      subscribes: 2,
+      estimated_value: 210.25,
+      unsubscribes: 3,
+      views: 5195,
+      likes: 12,
+      restacks: 1,
+      subscribers_finished_post: 300,
+      section_name: null,
+      tags: [],
+      bylines: [{id: 12345}],
+    },
+  ],
+};
 
 // One payload for every analytics report: the tool passes the body through untouched, so what it is
 // matters far less than which path was asked for and with which parameters.
@@ -174,6 +234,13 @@ export function createMswServer() {
     });
   }
 
+  function postStatsHandler(responder) {
+    return http.get(EMAIL_STATS_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
   // A catch-all for the analytics reports: their paths are two and three segments deep, so `*`
   // matches any of them. Registered last so the narrower stats handlers above still win.
   function analyticsHandler(responder) {
@@ -224,6 +291,7 @@ export function createMswServer() {
     statsHandler(DASHBOARD_SUMMARY_URL, () => HttpResponse.json(DASHBOARD_SUMMARY_RESPONSE, {status: 200})),
     statsHandler(OPEN_RATE_URL, () => HttpResponse.json(OPEN_RATE_RESPONSE, {status: 200})),
     statsHandler(VIEWS_30D_URL, () => HttpResponse.json(VIEWS_30D_RESPONSE, {status: 200})),
+    postStatsHandler(() => HttpResponse.json(POST_STATS_RESPONSE, {status: 200})),
     subscriberSetHandler(() => HttpResponse.json({id: SUBSCRIBER_SET_ID}, {status: 200})),
     exportRequestHandler(() => HttpResponse.json({export_id: EXPORT_ID}, {status: 200})),
     // Ready on the first poll by default; a test that cares about the wait overrides this.
@@ -245,6 +313,7 @@ export function createMswServer() {
     postsHandler,
     draftDetailHandler,
     statsHandler,
+    postStatsHandler,
     analyticsHandler,
     subscriberSetHandler,
     exportRequestHandler,

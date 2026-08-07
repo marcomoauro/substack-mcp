@@ -124,7 +124,45 @@ For anything deeper, use `get_analytics`.
 </details>
 
 <details>
-<summary><strong>get_analytics</strong> - Read one of 17 analytics reports</summary>
+<summary><strong>get_post_stats</strong> - Rank your posts by any of 43 metrics</summary>
+
+Which post actually grew the list, which was worth most, which cost you subscribers. The dashboard's
+"Posts" tab, sortable and paged.
+
+**Inputs**:
+- `order_by` (string, optional): any of the 43 metrics, defaulting to `post_date`
+- `order_direction` (`asc` | `desc`, optional): defaults to `desc`
+- `limit` (number, optional): 1–100, defaults to 25
+- `offset` (number, optional): for paging the archive
+
+The metrics worth reaching for:
+
+| group | fields |
+|---|---|
+| conversion | `signups` `subscribes` `founding_subscribes` `annual_subscribes` `monthly_subscribes` `free_trials` `free_to_paid_upgrades` `signups_within_1_day` `estimated_value` |
+| churn | `unsubscribes` |
+| reading | `opens` `open_rate` `clicks` `click_through_rate` `views` `subscribers_finished_post` |
+| social | `likes` `shares` `restacks` `engagement_rate` `unique_engagements` |
+| delivery | `queued` `sent` `delivered` `dropped` |
+| video / podcast | `video_views` `video_minutes_watched` `downloads` `downloads_day30` … |
+
+**Returns**: `{total, returned, limit, offset, order_by, order_direction, posts}`. `total` is the
+whole archive, not the page; `order_by` and `order_direction` are echoed so a ranking is never read
+without knowing what produced it.
+
+> **Two caveats**, both verified:
+> - **There is no date filter.** `from_date`/`to_date` are ignored by this endpoint — `total` does not
+>   change — so the schema does not offer them. Narrow by sorting and paging instead.
+> - Ranking by a **rate** (`open_rate`, `engagement_rate`, `click_through_rate`) descending puts posts
+>   with no data first, because `null` sorts before numbers. The tool does not filter them out, since
+>   that would silently answer a different question.
+>
+> `order_by` is an enum on purpose: the API answers `200` for a field it does not recognise and
+> returns an arbitrary order, so a typo would produce a ranking that looks authoritative.
+</details>
+
+<details>
+<summary><strong>get_analytics</strong> - Read one of 16 publication-level reports</summary>
 
 Everything behind the dashboard's Stats tabs, as one tool with a `report` enum rather than
 seventeen near-identical tools.
@@ -146,7 +184,6 @@ seventeen near-identical tools.
 | `audience_overlap` | other Substacks whose audience overlaps yours — the collaboration shortlist |
 | `audience_locations` | how many countries and US states your subscribers span |
 | `subscriber_notes` | recent Notes written by your subscribers |
-| `email_stats` | per-send delivery and open statistics |
 | `paid_subscriber_growth` | paid growth rate, new subscriptions, expirations |
 | `subscribers_timeseries`, `followers_timeseries`, `arr_timeseries` | counts and revenue over time |
 | `network_attribution` | what share of subscribers arrived via the Substack network |

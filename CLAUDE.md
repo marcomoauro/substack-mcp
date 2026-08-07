@@ -122,13 +122,33 @@ export is usually already done. Four things this flow gets wrong if taken at fac
 and fails *silently*: a subscriber named `Smith, John` shifts every later column of that one row.
 
 **The analytics reports live in one registry**, `ANALYTICS_REPORTS` in `src/tools/get_analytics.js`:
-17 verified endpoints under `/publication/stats/`, exposed as one tool with a `report` enum rather
-than 17 near-identical tools, which would make a model's choice harder rather than easier. Each entry
+16 verified endpoints under `/publication/stats/`, exposed as one tool with a `report` enum rather
+than 16 near-identical tools, which would make a model's choice harder rather than easier. Each entry
 carries its path, whether it takes a date window (`from_date`/`to_date`, or full ISO `start`/`end`
 for retention), a default `limit` for the two that answer 400 without one, and the fixed extras the
 dashboard always sends. **An unexpected parameter is a 400 on several of these**, so a parameter that
 does not apply to the chosen report is dropped *and named* in `ignored_params` — the same
 silent-drop hazard as `columnView` and the export's columns, which is now three for three.
+
+**`email_stats` is misnamed and is not one of those reports.** Despite living under
+`/publication/stats/` it is the **per-post table** behind the dashboard's "Posts" tab — which itself
+lives at `/publish/stats/emails`, not `/publish/stats/posts` — with one row per post across the whole
+archive: 43 fields covering delivery, opens, clicks, conversion (`signups`, `subscribes`,
+`free_to_paid_upgrades`, `estimated_value`), churn (`unsubscribes`) and completion
+(`subscribers_finished_post`). It takes `offset`/`limit`/`order_by`/`order_direction`, so it belongs
+to `src/tools/get_post_stats.js` and is deliberately absent from `ANALYTICS_REPORTS`; both specs
+assert the split, because two doors to the same data would mean choosing between a full report and a
+crippled one. Two measured facts shape that tool:
+
+- **`order_by` must be validated against the field list.** An unrecognised value answers **200** with
+  an arbitrary order, so a typo yields a ranking that looks authoritative. The enum is the only
+  guard — this is the *fourth* silent-ignore in this API.
+- **There is no date filter.** `from_date`/`to_date` leave `total` unchanged at 863, so the schema
+  does not offer them; `strictObject` then tells a caller that guesses `from_date` that it is
+  unrecognised, which is the difference between knowing there is no window and believing there is.
+  Sorting works for real, though: `signups` descending returns 42, 41, 41, 27, 23… Ranking by a
+  *rate* puts `null` first, and the tool does not filter those out — that would answer a different
+  question than the one asked.
 
 **Two endpoints next to them are broken upstream, not mis-called:**
 `/publication/stats/audience_insights/location` (the subscriber map) and
