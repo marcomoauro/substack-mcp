@@ -69,15 +69,10 @@ This option requires Docker to be installed on your system.
     "substack-api": {
       "command": "docker",
       "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e",
-        "SUBSTACK_PUBLICATION_URL",
-        "-e",
-        "SUBSTACK_SESSION_TOKEN",
-        "-e",
-        "SUBSTACK_USER_ID",
+        "run", "-i", "--rm",
+        "-e", "SUBSTACK_PUBLICATION_URL",
+        "-e", "SUBSTACK_SESSION_TOKEN",
+        "-e", "SUBSTACK_USER_ID",
         "marcomoauro/substack-mcp:latest"
       ],
       "env": {
@@ -91,6 +86,69 @@ This option requires Docker to be installed on your system.
 ```
 
 2. Replace `<SUBSTACK_PUBLICATION_URL>`, `<YOUR_SESSION_TOKEN>` and `<YOUR_USER_ID>` with your credentials.
+
+### 🏗 Running from Source
+
+Use this if you want to hack on the server itself. There is no build step — the sources are plain
+ESM and run as they are.
+
+#### Node.js
+
+```bash
+git clone https://github.com/marcomoauro/substack-mcp.git
+cd substack-mcp
+npm install
+```
+
+Then add to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "substack-api": {
+      "command": "node",
+      "args": ["<FULL_PATH_TO_PROJECT>/src/index.js"],
+      "env": {
+        "SUBSTACK_PUBLICATION_URL": "<YOUR_PUBLICATION_URL>",
+        "SUBSTACK_SESSION_TOKEN": "<YOUR_SESSION_TOKEN>",
+        "SUBSTACK_USER_ID": "<YOUR_USER_ID>"
+      }
+    }
+  }
+}
+```
+
+#### Docker
+
+```bash
+git clone https://github.com/marcomoauro/substack-mcp.git
+cd substack-mcp
+docker build -t substack-mcp .
+```
+
+Then add to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "substack-api": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "SUBSTACK_PUBLICATION_URL",
+        "-e", "SUBSTACK_SESSION_TOKEN",
+        "-e", "SUBSTACK_USER_ID",
+        "substack-mcp"
+      ],
+      "env": {
+        "SUBSTACK_PUBLICATION_URL": "<YOUR_PUBLICATION_URL>",
+        "SUBSTACK_SESSION_TOKEN": "<YOUR_SESSION_TOKEN>",
+        "SUBSTACK_USER_ID": "<YOUR_USER_ID>"
+      }
+    }
+  }
+}
+```
 
 ### 🪵 Logs
 
