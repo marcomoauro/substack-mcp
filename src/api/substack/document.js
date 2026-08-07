@@ -15,7 +15,7 @@ import {z} from "zod";
 //    `nodeId: null` on code blocks; rejecting those would reject every real post and kill any
 //    read-modify-write flow. Required attrs still guard, so a heading without `level` fails.
 
-const looseAttrs = z.looseObject({});
+const looseAttrs = z.looseObject({}).describe('Editor-written attributes; pass them back unchanged.');
 
 const markSchema = z.discriminatedUnion('type', [
   z.strictObject({type: z.literal('strong')}).describe('Bold.'),
@@ -43,13 +43,23 @@ const paragraphNode = z.strictObject({
   type: z.literal('paragraph'),
   attrs: looseAttrs.optional(),
   content: inlineContent.optional().describe('Omit for an empty paragraph.'),
-});
+}).describe('A paragraph of text — the most common node in the document.');
 
+const headingAttrs = looseAttrs.extend({
+  level: z.number().int().min(1).max(6).describe('Heading level, 1 (largest) to 6 (smallest).'),
+}).describe('Editor-written attributes; pass them back unchanged.');
+
+// content is optional, matching paragraphNode, rather than required as ProseMirror would allow:
+// zero empty headings turned up across the 12 real published posts sampled for this design, so the
+// evidence for either choice is weak, but the consequence is not. Rejecting a real document breaks
+// the read-modify-write round trip this contract exists to protect; accepting a contentless heading
+// is at worst a cosmetic authoring mistake. Do not tighten this back to required without
+// remeasuring against a larger sample.
 const headingNode = z.strictObject({
   type: z.literal('heading'),
-  attrs: z.looseObject({level: z.number().int().min(1).max(6)}),
-  content: inlineContent,
-});
+  attrs: headingAttrs,
+  content: inlineContent.optional().describe('Omit for an empty heading.'),
+}).describe('A section heading, levels 1 to 6.');
 
 export const postBodySchema = z.strictObject({
   type: z.literal('doc'),

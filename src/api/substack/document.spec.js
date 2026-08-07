@@ -1,5 +1,6 @@
 import {test, describe, before, after} from 'node:test';
 import assert from 'node:assert/strict';
+import {z} from 'zod';
 import {postBodySchema} from './document.js';
 import {setTestEnv} from '../../../test/helpers/env.js';
 
@@ -12,7 +13,15 @@ after(() => restoreEnv());
 const doc = (...content) => ({type: 'doc', content});
 const text = (value) => ({type: 'text', text: value});
 const parse = (value) => postBodySchema.safeParse(value);
-const issues = (value) => parse(value).error.issues.map(i => `${i.path.join('.')}: ${i.message}`);
+
+// Guarded the way CLAUDE.md documents for callTool results: reading .error.issues on a parse that
+// unexpectedly succeeded throws a TypeError that buries the real diff under an unrelated stack.
+const issues = (value) => {
+  const result = parse(value);
+
+  assert.equal(result.success, false, 'expected the parse to fail, but it succeeded');
+  return result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`);
+};
 
 describe('postBodySchema — paragraphs and text', () => {
   test('accepts an empty document', () => {
@@ -98,5 +107,62 @@ describe('postBodySchema — headings', () => {
     assert.match(message, /Invalid discriminator value/);
     assert.match(message, /'paragraph'/);
     assert.match(message, /'heading'/);
+  });
+
+  test('accepts a heading with no content at all', () => {
+    assert.equal(parse(doc({type: 'heading', attrs: {level: 2}})).success, true);
+  });
+
+  test('rejects heading level 0', () => {
+    assert.equal(parse(doc({type: 'heading', attrs: {level: 0}, content: [text('T')]})).success, false);
+  });
+
+  test('rejects a fractional heading level', () => {
+    assert.equal(parse(doc({type: 'heading', attrs: {level: 2.5}, content: [text('T')]})).success, false);
+  });
+});
+
+describe('postBodySchema — strictness', () => {
+  // CLAUDE.md: a plain z.object strips unknown keys silently, which would delete a node key this
+  // schema does not model from a read-modify-write round trip. strictObject is what turns that into
+  // a reported error instead, so every node level gets its own check rather than trusting one.
+  test('rejects an unknown key on the document root, naming it', () => {
+    assert.match(issues({type: 'doc', content: [], bogus: true}).join(' '), /Unrecognized key.*bogus/);
+  });
+
+  test('rejects an unknown key on a paragraph node, naming it', () => {
+    assert.match(issues(doc({type: 'paragraph', content: [], bogus: true})).join(' '), /Unrecognized key.*bogus/);
+  });
+
+  test('rejects an unknown key on a heading node, naming it', () => {
+    const node = {type: 'heading', attrs: {level: 1}, content: [text('T')], bogus: true};
+
+    assert.match(issues(doc(node)).join(' '), /Unrecognized key.*bogus/);
+  });
+
+  test('rejects an unknown key on a text node, naming it', () => {
+    const node = {type: 'text', text: 'x', bogus: true};
+
+    assert.match(issues(doc({type: 'paragraph', content: [node]})).join(' '), /Unrecognized key.*bogus/);
+  });
+
+  test('rejects a text node with no text', () => {
+    assert.equal(parse(doc({type: 'paragraph', content: [{type: 'text'}]})).success, false);
+  });
+});
+
+describe('postBodySchema — descriptions', () => {
+  // Regression guard for the exact hazard CLAUDE.md records: this schema publishes as a tool's
+  // JSON Schema and the description is the only vocabulary a calling model gets, so stripping every
+  // .describe() call must fail a test, not just read badly. z.toJSONSchema with these exact options
+  // is the call the SDK itself makes (server/zod-json-schema-compat.js), not an approximation of it.
+  test('every content node carries a description in the published schema', () => {
+    const json = z.toJSONSchema(postBodySchema, {target: 'draft-7', io: 'input'});
+    const branches = json.properties.content.items.oneOf;
+
+    assert.ok(branches.length > 0);
+    for (const branch of branches) {
+      assert.ok(branch.description, `${branch.properties.type.const} node has no description`);
+    }
   });
 });
