@@ -1,7 +1,22 @@
 # Markdown post bodies — Design
 
 Date: 2026-08-07
-Status: approved
+Status: **superseded** by `2026-08-07-post-body-contract-design.md`, same day, on measurement.
+
+Two numbers ended it. **100% of 60 sampled published posts contain nodes Markdown cannot express** —
+`button` in 60/60, `captionedImage` in 60/60 — so this design could not have reproduced a single real
+post on this publication, and the "images are out of scope, they come later" call below was the whole
+substance rather than the tail of it.
+
+Worse, the safety net here did not hold. In a head-to-head run, a model given the Markdown contract
+**degraded a button to a link and omitted a paywall entirely**, producing valid Markdown and an empty
+`unsupported` list. `unsupported` can only report constructs Markdown *has* and Substack lacks; what
+Markdown *lacks* is substituted upstream, in the model, and arrives as healthy prose. That post would
+have published with its paid section public and nothing in the log to say so.
+
+What survives is the measurement, kept here because it was real: the renderer prototype reproduced a
+hand-written document byte for byte, and Markdown was 5.8× cheaper in emitted bytes. It lost on
+coverage, not on fidelity or cost.
 
 ## Goal
 
