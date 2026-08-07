@@ -227,6 +227,36 @@ confirm each renders — the same loop that produced the node shapes, and the on
 name right in the spec and wrong in the code. Then a real post read, validated, and written back
 unchanged, asserting the round trip preserves what it passed through.
 
+## Limits
+
+**Images can be referenced but not uploaded**, and this is the design's sharpest practical limit:
+`captionedImage` appears in 60 of 60 sampled posts, while `image2.src` must already point at a
+Substack-hosted asset. A post that reuses an existing image works; a post that needs a new one does
+not.
+
+An attempt to settle the upload endpoint on 2026-08-07 **failed, and the failure is the finding.**
+`POST /api/v1/image` on the publication host was tried three ways — `{image: <data URL>}` as JSON (the
+fork's shape), as `application/x-www-form-urlencoded` (python-substack's shape, since `requests`'
+`data=` is form-encoded rather than JSON), and as `multipart/form-data`. **All three hang.** The
+browser's own network log shows the request pending indefinitely: the server accepts the connection and
+never answers, past a minute. A cross-origin attempt at `substack.com/api/v1/image` never settled
+either.
+
+So neither source's claim is confirmed, and the endpoint as both describe it does not respond to a real
+logged-in session. This belongs beside `audience_insights/location` and `visitor_sources` — documented
+endpoints that do not work — except that here the documentation is a third party's rather than
+Substack's own. **Do not implement an upload from either signature.**
+
+Settling it means watching the editor upload something itself, which is a different kind of work from
+replaying a request: it needs a file reaching a file picker or a paste event. Deliberately not folded
+into this design.
+
+Nodes that stay out until their shape is read off a live draft: LaTeX, footnotes, polls, poetry,
+recipes, the subscribe widget, and the financial chart — all names in the editor's "More" menu, none
+with a shape anyone has verified. `calloutBlock` and `pullquote` stay out for a stronger reason: they
+come only from `python-substack`, the file that was wrong about `codeBlock`, and appear in that menu
+nowhere.
+
 ## Open items
 
 The code-block language table. `auto` is the auto-detect sentinel, `plaintext` the plain-text value,
