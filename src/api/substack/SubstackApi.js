@@ -289,6 +289,120 @@ export default class SubstackApi {
   }
 
   /**
+   * One page of the accounts you subscribe to, on substack.com.
+   *
+   * `items` is **heterogeneous**: alongside `type: 'subscription'` it carries `type: 'label'`
+   * (section headers like "Paid") and `type: 'add_more'` (a UI affordance). Treating the array as a
+   * list of subscriptions yields entries with no publication at all, so the caller must filter.
+   */
+  async listSubscriptions({cursor = null, limit = 100} = {}) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: '/subscriptions/all/v2',
+      params: {limit, cursor},
+      referer: '/',
+    });
+  }
+
+  /**
+   * The reader Inbox: recent posts from the publications you subscribe to.
+   *
+   * Paging is not a cursor — the top-level `cursor` is null. It is `after`, and the value comes from
+   * the last entry of `inboxItems`, whose `content_date` is the timestamp to resume from.
+   */
+  async listReaderPosts({limit = 20, after = null} = {}) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: '/reader/posts',
+      params: {limit, after},
+      referer: '/inbox',
+    });
+  }
+
+  /**
+   * One post by id, from any publication — answers `{post, publication, publicationSettings}`.
+   *
+   * This is the only endpoint that returns the *body* of someone else's post. Verified against a
+   * live post: `post.body_html` came back complete at ~22 KB.
+   */
+  async getPostById(post_id) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: `/posts/by-id/${post_id}`,
+      referer: '/inbox',
+    });
+  }
+
+  /** The Notes/posts feed. `tab` is an id from `getReaderFeedTabs`, e.g. 'for-you' or 'subscribed'. */
+  async getReaderFeed({tab = 'for-you', cursor = null, limit = 20} = {}) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: '/reader/feed',
+      params: {tab, cursor, limit},
+      referer: '/notes',
+    });
+  }
+
+  /**
+   * The available feed tabs. Note the `name` of each is **localized** to the account's language —
+   * observed coming back in Italian — so a tab must be selected by `id`, never by name.
+   */
+  async getReaderFeedTabs() {
+    return this.requestGlobal({method: 'GET', path: '/reader/feed/tabs', referer: '/notes'});
+  }
+
+  /** One user's own feed: the Notes they wrote and the posts they published. */
+  async getProfileFeed(user_id, {cursor = null, limit = 20} = {}) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: `/reader/feed/profile/${user_id}`,
+      params: {cursor, limit},
+      referer: '/profile',
+    });
+  }
+
+  /** One Note or comment, as `{item}`. */
+  async getComment(comment_id) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: `/reader/comment/${comment_id}`,
+      referer: '/notes',
+    });
+  }
+
+  /**
+   * The reply branches under a Note or comment, as
+   * `{rootComment, commentBranches, moreBranches, nextCursor}`.
+   */
+  async getCommentReplies(comment_id, {cursor = null} = {}) {
+    return this.requestGlobal({
+      method: 'GET',
+      path: `/reader/comment/${comment_id}/replies`,
+      params: {cursor},
+      referer: '/notes',
+    });
+  }
+
+  /**
+   * Restacks a post or a Note to your own followers.
+   *
+   * UNVERIFIED: this publishes to your profile, and confirming it means leaving a real restack
+   * behind. Path and body come from the dashboard's own traffic as read by the fork.
+   */
+  async restackFeedItem({post_id = null, comment_id = null, tab_id = 'for-you'} = {}) {
+    return this.requestGlobal({
+      method: 'POST',
+      path: '/restack/feed',
+      body: {
+        ...(post_id === null ? {} : {postId: Number(post_id)}),
+        ...(comment_id === null ? {} : {commentId: Number(comment_id)}),
+        tabId: tab_id,
+      },
+      referer: '/notes',
+    });
+  }
+
+  /**
    * The comments on one of your posts. Answers `{comments, automod_hidden_comments}` — the second
    * array is the ones Substack's automod withheld, which never appear in the first.
    */

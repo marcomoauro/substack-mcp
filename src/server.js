@@ -17,6 +17,13 @@ import {getPostTagsSchema, getPostTagsHandler} from "./tools/get_post_tags.js";
 import {addTagToPostSchema, addTagToPostHandler} from "./tools/add_tag_to_post.js";
 import {getPostCommentsSchema, getPostCommentsHandler} from "./tools/get_post_comments.js";
 import {commentOnPostSchema, commentOnPostHandler} from "./tools/comment_on_post.js";
+import {listSubscriptionsSchema, listSubscriptionsHandler} from "./tools/list_subscriptions.js";
+import {listReaderPostsSchema, listReaderPostsHandler} from "./tools/list_reader_posts.js";
+import {getReaderPostSchema, getReaderPostHandler} from "./tools/get_reader_post.js";
+import {getReaderFeedSchema, getReaderFeedHandler} from "./tools/get_reader_feed.js";
+import {getProfileFeedSchema, getProfileFeedHandler} from "./tools/get_profile_feed.js";
+import {getCommentThreadSchema, getCommentThreadHandler} from "./tools/get_comment_thread.js";
+import {restackItemSchema, restackItemHandler} from "./tools/restack_item.js";
 import {logger} from "./logger.js";
 
 export const tools = {
@@ -145,6 +152,60 @@ export const tools = {
       "this server offers no way to delete it.",
     schema: commentOnPostSchema,
     handler: commentOnPostHandler,
+  },
+  // The tools below read substack.com rather than the publication: they are about the account as a
+  // *reader* — what it subscribes to, what is in its inbox, what is in its feed — rather than about
+  // the publication it administers. Different host, different id space, genuinely different surface.
+  list_subscriptions: {
+    description:
+      "List the Substack publications this account subscribes to, with the plan, membership state " +
+      "and whether emails are on. Excludes paused and expired subscriptions unless asked otherwise. " +
+      "This is what the account reads, not who reads it — for your own subscribers use list_subscribers.",
+    schema: listSubscriptionsSchema,
+    handler: listSubscriptionsHandler,
+  },
+  list_reader_posts: {
+    description:
+      "List recent posts from the publications this account subscribes to — the reader Inbox — with " +
+      "read state and reading progress. Each post is summarised; use get_reader_post to read one.",
+    schema: listReaderPostsSchema,
+    handler: listReaderPostsHandler,
+  },
+  get_reader_post: {
+    description:
+      "Read one post in full, from any publication — not just your own. Returns the body as HTML " +
+      "along with its author, stats and audience. This is the only way to read the text of someone " +
+      "else's post.",
+    schema: getReaderPostSchema,
+    handler: getReaderPostHandler,
+  },
+  get_reader_feed: {
+    description:
+      "Read the Substack Notes feed: Notes and posts surfaced to this account. Pick the feed with " +
+      "`tab` ('for-you' or 'subscribed'), and set include_tabs to discover the ids available.",
+    schema: getReaderFeedSchema,
+    handler: getReaderFeedHandler,
+  },
+  get_profile_feed: {
+    description:
+      "Read what one account has published — its Notes, its posts, or both. Defaults to your own " +
+      "account, so this is how to list the Notes you have written; pass user_id for anyone else.",
+    schema: getProfileFeedSchema,
+    handler: getProfileFeedHandler,
+  },
+  get_comment_thread: {
+    description:
+      "Read one Note or comment together with the replies beneath it, each with its author and its " +
+      "position in the thread. Take the id from get_reader_feed or get_profile_feed.",
+    schema: getCommentThreadSchema,
+    handler: getCommentThreadHandler,
+  },
+  restack_item: {
+    description:
+      "Restack a post or a Note to your own followers. This is public and appears on your profile; " +
+      "this server offers no way to undo it. Provide exactly one of post_id or comment_id.",
+    schema: restackItemSchema,
+    handler: restackItemHandler,
   },
   get_publication_stats: {
     description:

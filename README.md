@@ -242,6 +242,105 @@ This is published under your name, and this server offers no way to delete it. T
 logged at `info` before the request, since the log is the only record of what was said.
 </details>
 
+The seven tools below read **`substack.com`**, not your publication. They are about the account as a
+*reader* — what it subscribes to, what is in its inbox and feed — which is a different host and a
+different id space from the publisher surface above.
+
+<details>
+<summary><strong>list_subscriptions</strong> - List what this account subscribes to</summary>
+
+**Inputs**:
+- `limit` (number, optional): 1–500, defaults to 100
+- `active_only` (boolean, optional): exclude paused and expired subscriptions. Defaults to `true`.
+
+**Returns**: `{returned, pages_fetched, subscriptions}`, each with plan, `membership_state`,
+`is_founding`, `is_favorite` and whether emails are off. Pages internally up to 20 requests and says
+`truncated: true` if that bound is what stopped it.
+
+Not to be confused with `list_subscribers`, which is who subscribes to *you*.
+</details>
+
+<details>
+<summary><strong>list_reader_posts</strong> - The reader Inbox</summary>
+
+**Inputs**:
+- `limit` (number, optional): 1–100, defaults to 20
+- `after` (string, optional): the `next_after` from a previous response. A **timestamp**, not an
+  opaque cursor — this endpoint's own `cursor` field is always null.
+
+**Returns**: `{returned, more, next_after, posts}`, each post summarised with its reading state
+(`is_read`, `read_progress`, `is_saved`). The Inbox sends every post's full body; it is dropped here,
+so use `get_reader_post` to read one.
+</details>
+
+<details>
+<summary><strong>get_reader_post</strong> - Read any post in full</summary>
+
+**Inputs**:
+- `post_id` (number): from `list_reader_posts` or `get_reader_feed`
+- `include_body` (boolean, optional): defaults to `true`
+
+**Returns**: the post's metadata plus `body_html`. `body_truncated: true` means the body was withheld
+behind a paywall this session does not clear — `preview_text` still carries the teaser.
+
+The body stays HTML: converting it would mean a new dependency or a regex pass over markup, and a
+regex HTML converter mangles nested lists and embeds *silently*.
+</details>
+
+<details>
+<summary><strong>get_reader_feed</strong> - The Notes feed</summary>
+
+**Inputs**:
+- `tab` (string, optional): tab **id** — `for-you` (default) or `subscribed`. Never the display name:
+  those are localized.
+- `limit` (number, optional): 1–50, defaults to 20
+- `cursor` (string, optional): the `next_cursor` from a previous response
+- `include_tabs` (boolean, optional): also return the available tab ids
+
+**Returns**: `{tab, returned, next_cursor, items}`. Each item is a `note` or a `post`.
+`non_content_items_skipped` counts the "people to follow" blocks Substack mixes into the array, which
+carry no content at all.
+</details>
+
+<details>
+<summary><strong>get_profile_feed</strong> - What one account has published</summary>
+
+**Inputs**:
+- `user_id` (number, optional): defaults to `SUBSTACK_USER_ID` — your own account
+- `type` (`all` | `notes` | `posts`, optional): defaults to `all`
+- `limit` (number, optional): 1–50, defaults to 20
+- `cursor` (string, optional)
+
+**Returns**: `{user_id, type, returned, next_cursor, items}`. When filtering, `read_from_profile`
+reports how many entries the page actually held — otherwise "3 notes out of 20 entries read" would
+look like "this account has written 3 notes".
+</details>
+
+<details>
+<summary><strong>get_comment_thread</strong> - Read a Note and its replies</summary>
+
+**Inputs**:
+- `comment_id` (number): without the `c-` prefix Substack uses in urls
+- `include_replies` (boolean, optional): defaults to `true`
+
+**Returns**: `{comment, branch_count, replies_returned, more_branches, next_cursor, branches}`. Each
+branch is a direct reply plus its descendants, with `parent_comment_id` and `depth` resolved.
+</details>
+
+<details>
+<summary><strong>restack_item</strong> - Restack a post or Note</summary>
+
+**Inputs**: exactly one of
+- `post_id` (number)
+- `comment_id` (number)
+
+plus `tab_id` (string, optional), defaulting to `for-you`.
+
+**Returns**: `{status, restack_id}`.
+
+This is public and appears on your profile. This server offers no way to undo it.
+</details>
+
 <details>
 <summary><strong>get_publication_stats</strong> - Read the headline stats</summary>
 
