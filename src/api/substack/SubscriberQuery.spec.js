@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   buildSubscriberQuery,
   SUBSCRIBER_COLUMNS,
+  SUBSCRIBER_COLUMN_NAMES,
   OPERATORS_BY_TYPE,
+  COLUMN_KEY_BY_LABEL,
 } from './SubscriberQuery.js';
 import {setTestEnv} from '../../../test/helpers/env.js';
 import {captureLogs} from '../../../test/helpers/capture-logs.js';
@@ -36,6 +38,39 @@ describe('SUBSCRIBER_COLUMNS', () => {
       assert.equal(typeof label, 'string', `${column} has no label`);
       assert.ok(label.length > 0, `${column} has an empty label`);
     }
+  });
+});
+
+describe('COLUMN_KEY_BY_LABEL', () => {
+  // The subscriber export answers with a header of human labels — `Emails opened (6mo)`, not
+  // `num_email_opens` — so reading it back into keyed objects is a reverse lookup on this table.
+  // These were confirmed against a real export: all 46 returned headers resolved, none unmapped.
+  test('maps every column label back to its key', () => {
+    for (const column of SUBSCRIBER_COLUMN_NAMES) {
+      assert.equal(COLUMN_KEY_BY_LABEL[SUBSCRIBER_COLUMNS[column].label], column);
+    }
+  });
+
+  // A duplicate label would make the reverse map lose a column silently: the second entry
+  // overwrites the first and one key becomes unreachable from an export header.
+  test('has an entry per column, so no label collided', () => {
+    assert.equal(Object.keys(COLUMN_KEY_BY_LABEL).length, SUBSCRIBER_COLUMN_NAMES.length);
+  });
+
+  // Spot checks on the ones whose label looks nothing like the key, which is where a hand-written
+  // map would drift first.
+  test('resolves the labels that do not resemble their key', () => {
+    assert.equal(COLUMN_KEY_BY_LABEL['Can see paid content'], 'is_subscribed');
+    assert.equal(COLUMN_KEY_BY_LABEL['Sections'], 'emails_enabled');
+    assert.equal(COLUMN_KEY_BY_LABEL['Activity'], 'activity_rating');
+    assert.equal(COLUMN_KEY_BY_LABEL['Revenue'], 'total_revenue_generated');
+    assert.equal(COLUMN_KEY_BY_LABEL['Type'], 'subscription_type');
+    assert.equal(COLUMN_KEY_BY_LABEL['Start date'], 'subscription_created_at');
+    assert.equal(COLUMN_KEY_BY_LABEL['Bundle origin'], 'is_bundle_parent');
+  });
+
+  test('an unknown label resolves to nothing rather than a wrong key', () => {
+    assert.equal(COLUMN_KEY_BY_LABEL['Not A Column'], undefined);
   });
 });
 

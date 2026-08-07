@@ -1,6 +1,7 @@
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {createDraftPostSchema, createDraftPostHandler} from "./tools/create_draft_post.js";
 import {listSubscribersSchema, listSubscribersHandler} from "./tools/list_subscribers.js";
+import {exportSubscribersSchema, exportSubscribersHandler} from "./tools/export_subscribers.js";
 import {listPostsSchema, listPostsHandler} from "./tools/list_posts.js";
 import {getDraftSchema, getDraftHandler} from "./tools/get_draft.js";
 import {getPublicationStatsSchema, getPublicationStatsHandler} from "./tools/get_publication_stats.js";
@@ -13,21 +14,31 @@ export const tools = {
     handler: createDraftPostHandler,
   },
   list_subscribers: {
-    // The engagement caveat belongs in the description rather than a comment: the columns are
-    // filterable but never come back in the response, because the API takes the fields it returns
-    // from the publication's saved Display settings and ignores a per-request column list. A
-    // caller filtering on opens and then looking for them in the result would otherwise conclude
-    // the data is missing. `count` is the way to read them — filter and look at how many match.
+    // The engagement caveat still belongs in the description: this endpoint takes the fields it
+    // returns from the publication's saved Display settings and ignores a per-request column list,
+    // so a caller filtering on opens and then looking for them here would conclude the data is
+    // missing. It is not — export_subscribers reads it, which is what the pointer below is for.
     description:
       "List and filter the subscribers of your Substack publication. Supports the same 48 columns " +
       "and operators as the Subscribers dashboard, combined with AND, plus free-text search, " +
       "sorting and pagination. Returns `count`, the total matching the filters regardless of " +
       "`limit`, so a call with limit 1 is a cheap way to size a segment. Engagement columns " +
-      "(email opens, post views, comments, shares, activity rating) can be filtered on but are " +
-      "not included in the returned subscriber records — use `count` with different thresholds to " +
-      "learn about them.",
+      "(email opens, post views, comments, shares, activity rating) can be filtered on here but " +
+      "are not part of the records this tool returns — use export_subscribers to read their values.",
     schema: listSubscribersSchema,
     handler: listSubscribersHandler,
+  },
+  export_subscribers: {
+    description:
+      "Export subscribers with their full column values, including the engagement metrics " +
+      "list_subscribers can filter on but not return: email opens over 7d/30d/6mo, unique emails " +
+      "seen, post views, unique posts seen, comments, shares, links clicked, days active and " +
+      "activity rating. Takes the same filters as list_subscribers and covers the whole matching " +
+      "set — there is no paging. Substack generates the file asynchronously, so this waits for it " +
+      "and returns the parsed records. Two columns cannot be exported and are reported in " +
+      "`missing_columns` rather than failing: tag_ids and group_membership.",
+    schema: exportSubscribersSchema,
+    handler: exportSubscribersHandler,
   },
   list_posts: {
     description:
