@@ -122,7 +122,10 @@ describe('MCP server — call_tool', () => {
     try {
       const result = await client.callTool({name: 'create_draft_post', arguments: VALID_ARGS});
 
-      assert.deepEqual(result.content, [{type: 'text', text: '"OK"'}]);
+      // Serialized by the server, so the id arrives as JSON text rather than an object.
+      assert.deepEqual(result.content, [
+        {type: 'text', text: JSON.stringify({draft_id: 167712345, is_published: false}, null, 2)},
+      ]);
     } finally {
       await close();
     }
@@ -269,7 +272,7 @@ describe('MCP server — call_tool', () => {
 
       const success = find(lines, 'tool.call.success');
       assert.equal(success.tool, 'create_draft_post');
-      assert.equal(success.result, 'OK');
+      assert.deepEqual(success.result, {draft_id: 167712345, is_published: false});
       assert.equal(typeof success.duration_ms, 'number');
     });
 

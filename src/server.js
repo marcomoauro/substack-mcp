@@ -40,7 +40,7 @@ export const tools = {
   get_draft: {
     description:
       "Read one draft post of your Substack publication in full, including its body and its " +
-      "audience and email settings. Take the id from list_posts.",
+      "audience and email settings. Take the id from list_posts or create_draft_post.",
     schema: getDraftSchema,
     handler: getDraftHandler,
   },

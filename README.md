@@ -15,7 +15,7 @@ A Model Context Protocol (MCP) Server for [Substack](https://substack.com) enabl
 - `subtitle` (string): Subtitle of the post
 - `body` (string): Body of the post
 
-**Returns**: "OK" if the post was created successfully.
+**Returns**: `{draft_id, is_published}`. Pass `draft_id` to `get_draft` to read the draft back.
 </details>
 
 <details>
@@ -77,7 +77,7 @@ There is no OR and no nesting: anything needing OR has to be issued as separate 
 <summary><strong>get_draft</strong> - Read one draft in full</summary>
 
 **Inputs**:
-- `draft_id` (number): the id returned by `list_posts`
+- `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
 
 **Returns**: the draft as Substack stores it, body and audience/email settings included.
 </details>
