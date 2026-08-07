@@ -11,6 +11,13 @@ import {
   POSTS_RESPONSE,
   DRAFT_DETAIL_RESPONSE,
   DASHBOARD_SUMMARY_RESPONSE,
+  SUBSCRIBER_SET_URL,
+  SUBSCRIBER_SET_EXPORT_URL,
+  SUBSCRIBER_SET_ID,
+  EXPORT_ID,
+  EXPORT_FILE_PATH,
+  EXPORT_FILE_URL,
+  EXPORT_CSV,
 } from '../../../test/helpers/msw-server.js';
 import {TEST_ENV, setTestEnv} from '../../../test/helpers/env.js';
 import {captureLogs} from '../../../test/helpers/capture-logs.js';
@@ -245,6 +252,87 @@ describe('SubstackApi — request', () => {
     await createApi().request({method: 'GET', path: '/publish-dashboard/summary'});
 
     assert.equal(msw.requests[0].body, '');
+  });
+});
+
+describe('SubstackApi — subscriber set and export', () => {
+  test('createSubscriberSet posts the query and returns the set id', async () => {
+    const result = await createApi().createSubscriberSet({activity_rating: 5});
+
+    assert.deepEqual(result, {id: SUBSCRIBER_SET_ID});
+    assert.equal(msw.requests[0].method, 'POST');
+    assert.equal(msw.requests[0].url, SUBSCRIBER_SET_URL);
+    assert.deepEqual(msw.requests[0].body, {query: {activity_rating: 5}});
+  });
+
+  test('createSubscriberSet can build a set from explicit user ids instead', async () => {
+    await createApi().createSubscriberSet(null, [1, 2, 3]);
+
+    assert.deepEqual(msw.requests[0].body, {user_ids: [1, 2, 3]});
+  });
+
+  test('requestSubscriberSetExport posts the set id and the columns', async () => {
+    const result = await createApi().requestSubscriberSetExport({
+      subscriber_set_id: SUBSCRIBER_SET_ID,
+      columns: ['user_email_address', 'num_email_opens'],
+    });
+
+    assert.deepEqual(result, {export_id: EXPORT_ID});
+    assert.equal(msw.requests[0].url, SUBSCRIBER_SET_EXPORT_URL);
+    assert.deepEqual(msw.requests[0].body, {
+      subscriberSetId: SUBSCRIBER_SET_ID,
+      columns: ['user_email_address', 'num_email_opens'],
+    });
+  });
+
+  test('getSubscriberSetExport polls the export by id', async () => {
+    const result = await createApi().getSubscriberSetExport(EXPORT_ID);
+
+    assert.deepEqual(result, {url: EXPORT_FILE_PATH});
+    assert.equal(msw.requests[0].method, 'GET');
+    assert.equal(new URL(msw.requests[0].url).pathname, `/api/v1/subscriber_set/export/${EXPORT_ID}`);
+  });
+
+  // The export answers with a relative url, so it has to be resolved against the publication host
+  // rather than concatenated onto publication_url — which already ends in /api/v1 and would produce
+  // /api/v1/api/v1/...
+  test('downloadExport resolves the relative url against the publication host', async () => {
+    const csv = await createApi().downloadExport(EXPORT_FILE_PATH);
+
+    assert.equal(csv, EXPORT_CSV);
+    assert.equal(msw.requests[0].url, EXPORT_FILE_URL);
+  });
+
+  test('downloadExport returns the CSV as text rather than trying to parse it as JSON', async () => {
+    const csv = await createApi().downloadExport(EXPORT_FILE_PATH);
+
+    assert.equal(typeof csv, 'string');
+    assert.match(csv, /^Email,Name,/);
+  });
+
+  test('downloadExport sends the session cookie, which the file requires', async () => {
+    await createApi().downloadExport(EXPORT_FILE_PATH);
+
+    assert.equal(
+      msw.requests[0].headers.cookie,
+      'substack.sid=test-session-token; connect.sid=test-session-token;'
+    );
+  });
+
+  test('downloadExport accepts an absolute url too', async () => {
+    await createApi().downloadExport(EXPORT_FILE_URL);
+
+    assert.equal(msw.requests[0].url, EXPORT_FILE_URL);
+  });
+
+  // A raw-text request must still refuse a failing status: silently returning an error page as if it
+  // were the CSV would have the parser produce nonsense rows instead of an error.
+  test('a failing status on a text request still throws SubstackAPIException', async () => {
+    msw.server.use(msw.exportFileHandler(() => new HttpResponse('nope', {status: 403})));
+
+    const error = await createApi().downloadExport(EXPORT_FILE_PATH).catch((e) => e);
+
+    assert.match(error.message, /^SubstackAPIException: 403\b/);
   });
 });
 

@@ -39,6 +39,7 @@ describe('MCP server — list_tools', () => {
 
   const EXPECTED_TOOLS = [
     'create_draft_post',
+    'export_subscribers',
     'get_draft',
     'get_publication_stats',
     'list_posts',

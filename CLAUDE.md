@@ -87,9 +87,39 @@ rather than passing arguments straight through:
 - `count` is the total matching the filters regardless of `limit`, which makes `limit: 1` a cheap
   way to size a segment.
 - **A request-level `columnView` is ignored.** The returned fields come from the publication's saved
-  Display settings, so the engagement columns are *filterable but not readable* — the tool's
-  description says so, because a caller filtering on opens and then not finding them would
-  reasonably conclude the data is missing rather than unrequestable.
+  Display settings, so this endpoint cannot be made to return the engagement columns. That does not
+  make them unreadable — the export below does read them — so `list_subscribers` points at
+  `export_subscribers` rather than telling the caller the data does not exist.
+
+**The subscriber export is a four-step flow, and it is what makes every column readable.**
+`src/tools/export_subscribers.js` owns it:
+
+```
+POST /api/v1/subscriber_set                    {query: <the same filters>}  → {id}
+POST /api/v1/subscriber_set/export             {subscriberSetId, columns}   → {export_id}
+GET  /api/v1/subscriber_set/export/<id>                                     → {url}   (poll)
+GET  <url>                                                                  → CSV
+```
+
+Verified end to end. The dashboard's polling backoff is `1, 5, 10, 30`, then `60` repeated;
+`EXPORT_POLL_BACKOFF_SECONDS` mirrors it, except the first poll happens immediately because a small
+export is usually already done. Four things this flow gets wrong if taken at face value:
+
+- **The CSV header carries human LABELS, not column keys** — `Emails opened (6mo)`, not
+  `num_email_opens`. `COLUMN_KEY_BY_LABEL` is the reverse map; it works because the labels are
+  unique, which `SubscriberQuery.spec.js` asserts by entry count so a future collision fails loudly
+  instead of dropping a column.
+- **The server chooses the column order**, not the caller. Parse by header name, never by position.
+- **Two columns cannot be exported and are dropped in silence:** `tag_ids` and `group_membership`.
+  Asking for all 48 returns 46 with no error, so the tool diffs what it asked for against the header
+  and reports `missing_columns`. This is the same silent-drop hazard as `columnView`.
+- **The download url is relative to the publication host and cookie-authenticated** (403 without it,
+  not pre-signed) and answers **CSV, not JSON**. `handleResponse` unconditionally `JSON.parse`s, so
+  `readBody` was split out of it and `requestUrl({parse: 'text'})` is the raw path. `requestUrl` also
+  exists because that url cannot be appended to `publication_url`, which already ends in `/api/v1`.
+
+`src/api/substack/csv.js` is a ~40-line parser rather than a dependency. `split(',')` is not enough
+and fails *silently*: a subscriber named `Smith, John` shifts every later column of that one row.
 
 **`GET /api/v1/post_management/{drafts,published,scheduled}`** lists posts. `order_by` is **not
 optional**: `scheduled` answers 400 without it, which is why `src/tools/list_posts.js` keeps a

@@ -138,6 +138,20 @@ export const SUBSCRIBER_COLUMNS = {
 
 export const SUBSCRIBER_COLUMN_NAMES = Object.keys(SUBSCRIBER_COLUMNS);
 
+/**
+ * label -> column key, the reverse of `SUBSCRIBER_COLUMNS[*].label`.
+ *
+ * The subscriber export answers with a header of human labels rather than column keys —
+ * `Emails opened (6mo)`, not `num_email_opens` — so this is what turns an export back into keyed
+ * records. Confirmed against a real export: every one of the 46 returned headers resolved here.
+ *
+ * Labels are unique across the table, which is what makes the reverse safe; a collision would
+ * silently drop a column, so `SubscriberQuery.spec.js` asserts the entry count matches.
+ */
+export const COLUMN_KEY_BY_LABEL = Object.fromEntries(
+  Object.entries(SUBSCRIBER_COLUMNS).map(([column, {label}]) => [label, column])
+);
+
 function describeColumn(column) {
   const {type, label} = SUBSCRIBER_COLUMNS[column];
   return `${column} (${label}, ${type})`;

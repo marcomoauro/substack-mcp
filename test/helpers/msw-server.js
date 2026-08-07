@@ -10,6 +10,27 @@ export const POST_MANAGEMENT_URL = `${API}/post_management`;
 export const DASHBOARD_SUMMARY_URL = `${API}/publish-dashboard/summary`;
 export const OPEN_RATE_URL = `${API}/publication/stats/email_stats/30d_open_rate`;
 export const VIEWS_30D_URL = `${API}/publication/stats/publication_traffic/30d_views`;
+export const SUBSCRIBER_SET_URL = `${API}/subscriber_set`;
+export const SUBSCRIBER_SET_EXPORT_URL = `${API}/subscriber_set/export`;
+
+export const SUBSCRIBER_SET_ID = 1135508;
+export const EXPORT_ID = 'test-export-id';
+
+// The export answers with a *relative* url on the publication host, cookie-authenticated — not a
+// pre-signed one. Verified against the live API: fetching it without the session cookie is a 403.
+export const EXPORT_FILE_PATH = `/api/v1/subscriber_set/export/${EXPORT_ID}/subscribers.csv`;
+export const EXPORT_FILE_URL = `${TEST_ENV.SUBSTACK_PUBLICATION_URL}${EXPORT_FILE_PATH}`;
+
+/**
+ * A CSV shaped exactly like a real export: the header carries human LABELS rather than column keys,
+ * the server's own column order (not the requested one), a quoted currency value instead of a
+ * number, and a name containing a comma — the case a `split(',')` gets wrong.
+ */
+export const EXPORT_CSV = [
+  'Email,Name,Start date,Emails opened (30d),Post views,Revenue,Activity,Country',
+  'one@example.com,One,2026-07-29T22:07:50.299Z,2,1,"€0.00",5,BR',
+  'two@example.com,"Two, Junior",2026-06-01T10:00:00.000Z,0,7,"€50.00",3,IT',
+].join('\n');
 
 export const DRAFT_RESPONSE = {
   id: 167712345,
@@ -147,6 +168,39 @@ export function createMswServer() {
     });
   }
 
+  function subscriberSetHandler(responder) {
+    return http.post(SUBSCRIBER_SET_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
+  function exportRequestHandler(responder) {
+    return http.post(SUBSCRIBER_SET_EXPORT_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
+  // Polling: `attempt` counts how many times the status has been asked for, so a test can make the
+  // export become ready only on the Nth poll.
+  let exportPolls = 0;
+
+  function exportStatusHandler(responder) {
+    return http.get(`${SUBSCRIBER_SET_EXPORT_URL}/:exportId`, async ({request, params}) => {
+      await record(request);
+      exportPolls += 1;
+      return responder(params.exportId, exportPolls);
+    });
+  }
+
+  function exportFileHandler(responder) {
+    return http.get(`${SUBSCRIBER_SET_EXPORT_URL}/:exportId/:file`, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
   const server = setupServer(
     draftsHandler(() => HttpResponse.json(DRAFT_RESPONSE, {status: 200})),
     subscriberStatsHandler(() => HttpResponse.json(SUBSCRIBER_STATS_RESPONSE, {status: 200})),
@@ -154,7 +208,15 @@ export function createMswServer() {
     draftDetailHandler(() => HttpResponse.json(DRAFT_DETAIL_RESPONSE, {status: 200})),
     statsHandler(DASHBOARD_SUMMARY_URL, () => HttpResponse.json(DASHBOARD_SUMMARY_RESPONSE, {status: 200})),
     statsHandler(OPEN_RATE_URL, () => HttpResponse.json(OPEN_RATE_RESPONSE, {status: 200})),
-    statsHandler(VIEWS_30D_URL, () => HttpResponse.json(VIEWS_30D_RESPONSE, {status: 200}))
+    statsHandler(VIEWS_30D_URL, () => HttpResponse.json(VIEWS_30D_RESPONSE, {status: 200})),
+    subscriberSetHandler(() => HttpResponse.json({id: SUBSCRIBER_SET_ID}, {status: 200})),
+    exportRequestHandler(() => HttpResponse.json({export_id: EXPORT_ID}, {status: 200})),
+    // Ready on the first poll by default; a test that cares about the wait overrides this.
+    exportStatusHandler(() => HttpResponse.json({url: EXPORT_FILE_PATH}, {status: 200})),
+    exportFileHandler(() => new HttpResponse(EXPORT_CSV, {
+      status: 200,
+      headers: {'Content-Type': 'text/csv'},
+    }))
   );
 
   return {
@@ -165,12 +227,17 @@ export function createMswServer() {
     postsHandler,
     draftDetailHandler,
     statsHandler,
+    subscriberSetHandler,
+    exportRequestHandler,
+    exportStatusHandler,
+    exportFileHandler,
     start() {
       server.listen({onUnhandledRequest: 'error'});
     },
     reset() {
       server.resetHandlers();
       requests.length = 0;
+      exportPolls = 0;
     },
     stop() {
       server.close();

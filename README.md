@@ -51,11 +51,40 @@ with types reaches the client in the tool's JSON Schema, so a model does not hav
 **Returns**: `{count, returned, limit, offset, subscribers}`. `count` is the total matching the
 filters regardless of `limit`, so a call with `limit: 1` is a cheap way to size a segment.
 
-> **Note**: engagement columns can be *filtered* on but are not part of the returned records —
-> Substack takes the fields it returns from the publication's saved Display settings and ignores a
-> per-request column list. Use `count` with different thresholds to learn about them.
+> **Note**: engagement columns can be *filtered* on here but are not part of the records this tool
+> returns — Substack takes the fields it returns from the publication's saved Display settings and
+> ignores a per-request column list. Use **`export_subscribers`** to read their values.
 
 There is no OR and no nesting: anything needing OR has to be issued as separate calls.
+</details>
+
+<details>
+<summary><strong>export_subscribers</strong> - Export subscribers with every column value</summary>
+
+The way to actually *read* the engagement metrics `list_subscribers` can only filter on: email opens
+over 7d/30d/6mo, unique emails seen, post views, unique posts seen, comments, shares, links clicked,
+days active and activity rating.
+
+**Inputs**:
+- `filters` (array, optional): the same conditions as `list_subscribers`, combined with AND
+- `search` (string, optional): free text matched against subscriber name and email
+- `columns` (array, optional): which columns to include, defaulting to **all** of them
+- `max_wait_seconds` (number, optional): 1–600, defaulting to 120
+
+**Returns**: `{count, columns, missing_columns, unmapped_columns, export_id, subscribers}`, where
+each subscriber is keyed by column name.
+
+Substack generates the file asynchronously, so the tool creates a subscriber set, requests the
+export, polls until it is ready and downloads it. A small export lands in a few seconds. If the wait
+budget runs out the tool says so and names the `export_id` rather than blocking.
+
+> **Two caveats**, both verified against the live API:
+> - `tag_ids` and `group_membership` **cannot** be exported. Substack drops them silently rather
+>   than failing, so they are reported in `missing_columns` — asking for all 48 columns returns 46.
+> - Values arrive **display-formatted**, not raw: revenue is `"€50.00"` here and the number `50`
+>   through `list_subscribers`. Dates are ISO strings.
+
+There is no paging: an export covers the whole matching set.
 </details>
 
 <details>
