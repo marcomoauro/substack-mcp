@@ -1,4 +1,4 @@
-FROM node:22.15.0-alpine
+FROM node:24.19.0-alpine
 
 COPY ./ /opt
 WORKDIR /opt

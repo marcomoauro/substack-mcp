@@ -245,6 +245,49 @@ describe('logger — resilience', () => {
     assert.match(line.error.stack, /logger\.spec\.js/);
   });
 
+  test('expands error.cause, where a stackless error keeps its diagnosis', () => {
+    process.env.SUBSTACK_MCP_LOG_LEVEL = 'info';
+
+    // Shaped like what native `fetch` rejects with on Node 24: an outer error whose stack
+    // carries no frames at all, and a `cause` holding the real failure. Dropping the cause
+    // leaves a line that says only that something, somewhere, failed.
+    const error = new TypeError('fetch failed', {cause: new Error('connect ECONNREFUSED')});
+    error.stack = 'TypeError: fetch failed';
+
+    const [line] = logLines(() => logger.error('tool.call.error', {error}));
+
+    assert.equal(line.error.message, 'fetch failed');
+    assert.equal(line.error.cause.name, 'Error');
+    assert.equal(line.error.cause.message, 'connect ECONNREFUSED');
+    assert.match(line.error.cause.stack, /logger\.spec\.js/);
+  });
+
+  test('an error whose cause points back at it does not spin', () => {
+    process.env.SUBSTACK_MCP_LOG_LEVEL = 'info';
+
+    const error = new Error('outer');
+    error.cause = error;
+
+    const [line] = logLines(() => logger.error('tool.call.error', {error}));
+
+    assert.equal(line.error.message, 'outer');
+    assert.equal(line.error.cause, '[Circular]');
+  });
+
+  test('a cause chain is followed all the way down', () => {
+    process.env.SUBSTACK_MCP_LOG_LEVEL = 'info';
+
+    const error = new TypeError('fetch failed', {
+      cause: new Error('socket hang up', {cause: {syscall: 'connect', Cookie: 'substack.sid=s;'}}),
+    });
+
+    const [line] = logLines(() => logger.error('tool.call.error', {error}));
+
+    assert.equal(line.error.cause.cause.syscall, 'connect');
+    // A cause is not a trusted container: it goes through the same redaction as any payload.
+    assert.equal(line.error.cause.cause.Cookie, '***');
+  });
+
   test('a circular payload is logged rather than throwing', () => {
     process.env.SUBSTACK_MCP_LOG_LEVEL = 'info';
 
