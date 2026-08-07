@@ -646,8 +646,18 @@ describe('postBodySchema — images, buttons and opaque nodes', () => {
     });
   }
 
+  // In 33 of 40 sampled posts on the second publication. Its absence would have blocked the round
+  // trip on most of that archive — which is what a survey of only one publication had missed.
+  test('accepts a youtube embed', () => {
+    assert.equal(parse(doc({type: 'youtube2', attrs: {videoId: '0chZFIZLR_0'}})).success, true);
+  });
+
+  test('rejects a youtube embed with no videoId', () => {
+    assert.equal(parse(doc({type: 'youtube2', attrs: {}})).success, false);
+  });
+
   test('rejects a node type outside the enumeration, naming the alternatives', () => {
-    const message = issues(doc({type: 'youtube2', attrs: {videoId: 'x'}})).join(' ');
+    const message = issues(doc({type: 'subscribeWidget', attrs: {}})).join(' ');
 
     assert.match(message, /Invalid discriminator value/);
     assert.match(message, /'captionedImage'/);
@@ -690,6 +700,14 @@ const buttonNode = z.strictObject({
   }),
 }).describe('A call-to-action button.');
 
+// Verified 2026-08-07 on the quickviewai publication, where it appears in 33 of 40 sampled posts:
+// exactly `{videoId}` and no content, identical in every occurrence. `SubstackPost.youtubeVideo()`
+// already builds this shape, so on this one node the existing builder was right.
+const youtubeNode = z.strictObject({
+  type: z.literal('youtube2'),
+  attrs: z.looseObject({videoId: z.string().describe('The YouTube video id, not the watch URL.')}),
+}).describe('An embedded YouTube video.');
+
 // A node whose internals were never read. `looseObject` keeps everything it carries — including its
 // content — so a round trip preserves it exactly, while claiming no knowledge we do not have.
 const opaqueNode = (type, description) =>
@@ -706,7 +724,7 @@ Extend the union to its final membership:
 ```js
     paragraphNode, headingNode, bulletListNode, orderedListNode, blockquoteNode,
     codeBlockNode, legacyCodeBlockNode, horizontalRuleNode, paywallNode,
-    captionedImageNode, buttonNode,
+    captionedImageNode, buttonNode, youtubeNode,
     digestPostEmbedNode, substackMentionsNode, directMessageNode,
 ```
 
@@ -1610,8 +1628,9 @@ degrades to Plain Text without an error.
 `get_draft` on a **real published post**, `JSON.parse` its `draft_body`, and feed that straight back
 through `set_post_body` on the scratch draft. It must validate untouched.
 
-Do this for **at least five** posts from different points in the archive, not one: the enumeration came
-from a survey, and one post exercises one subset of it. A post using a node the union does not list
+Do this for **at least five** posts from each of the two publications — `implementing` and
+`quickviewai` — not five in total. The enumeration came from a survey, and surveying only the first
+publication is exactly what missed `youtube2`, which turned out to be in 33 of 40 posts on the second. A post using a node the union does not list
 fails loudly and names the alternatives — that is the designed behaviour, and the fix is to read that
 node's shape off a live draft and add it, never to loosen the union.
 
@@ -1700,6 +1719,8 @@ Use `superpowers:finishing-a-development-branch` to decide how this integrates.
 
 **The open item, carried from the spec:** the code-block language table. `auto` and `plaintext` are confirmed sentinels and the values are lowercase highlight.js names, but the full label-to-value mapping has to be lifted from the editor bundle (`grep` the loaded chunks for `plaintext` — the list is a `{value, label}` array near the "Auto-detect" string) rather than guessed. Until then the schema's description names the common ones and says omitting beats guessing, which is correct and honest; do not invent the rest.
 
-**Do not add** `youtube2`, `subscribeWidget`, `latex`, `footnote`, `poll`, `poetry`, `calloutBlock` or `pullquote` to the union in this plan. The first six exist as names in the editor's "More" menu but their shapes were never read; the last two come only from `python-substack`, the same file that was wrong about `codeBlock`, and do not appear in that menu at all. Each is a later addition after its shape is read off a live draft. A node outside the enumeration fails loudly and names the alternatives, which is the correct behaviour in the meantime.
+**Do not add** `subscribeWidget`, `latex`, `footnote`, `poll`, `poetry`, `calloutBlock` or `pullquote` to the union in this plan. The first five exist as names in the editor's "More" menu but their shapes were never read; the last two come only from `python-substack`, the same file that was wrong about `codeBlock`, and do not appear in that menu at all. Each is a later addition after its shape is read off a live draft. A node outside the enumeration fails loudly and names the alternatives, which is the correct behaviour in the meantime.
+
+`youtube2` **is** in the union, and how it got there is the cautionary tale: the first survey covered one publication and missed it, while it appears in 33 of 40 sampled posts on the second. If a third publication is ever added, survey it before trusting this enumeration.
 
 **`SubstackPost.js` already has a builder** — `paywall()`, `shareButton()`, `customButton()`, `captionedImage()`, `subscribeWithCaption()` — that no tool reaches. This plan does not use it and does not delete it. Its index-based mutation (`content[length - 1]`) cannot express nesting, which is why the schema route exists; removing it is a separate decision.

@@ -123,7 +123,7 @@ Then two deliberate choices, each with its own reason:
   branch. The 60-post survey enumerates the whole set: `paragraph`, `heading`, `text`, `blockquote`,
   `bullet_list`, `ordered_list`, `list_item`, `horizontal_rule`, `hard_break`, `code_block`,
   `highlighted_code_block`, `captionedImage`, `image2`, `caption`, `button`, `paywall`,
-  `digestPostEmbed`, `substack_mentions`, `directMessage`. The three whose internals were never read —
+  `digestPostEmbed`, `substack_mentions`, `directMessage`, `youtube2`. The three whose internals were never read —
   `digestPostEmbed`, `substack_mentions`, `directMessage` — are modelled as a `looseObject` on their
   literal `type`: everything else passes through preserved, which is enough for a round trip and
   honest about knowing no more than that.
@@ -136,9 +136,15 @@ Then two deliberate choices, each with its own reason:
   node then fails **loudly**, naming the types it could have been — visible, which is the opposite of
   the silent drop this design exists to prevent.
 
-  The residual risk is stated rather than engineered away: the enumeration comes from 60 posts of one
-  publication, so a node this publication has never used — `youtube2`, a footnote, LaTeX, a poll —
-  blocks a round trip until it is added. Adding one is a line in the union, and the failure says so.
+  **The enumeration had to be widened once already, which is the honest measure of this risk.** The
+  first survey covered `implementing` only. Sampling the second publication, `quickviewai`, found
+  `youtube2` — `{videoId}`, no content — in **33 of 40** posts, so the union as first drafted would
+  have blocked a round trip on most of that archive. Both publications are now covered.
+
+  The residual risk is stated rather than engineered away: a node neither publication has used — a
+  footnote, LaTeX, a poll, a subscribe widget — still blocks a round trip until its shape is read off
+  a live draft and added. Adding one is a line in the union, and the failure names the alternatives
+  rather than going quiet.
 
 ### At most one paywall, and we are the only ones enforcing it
 
