@@ -85,6 +85,18 @@ describe('getDraftHandler', () => {
     assert.equal(msw.requests.length, 0);
   });
 
+  // Reached only on a direct call — over MCP the SDK answers `Input validation error` before the
+  // handler runs, so this line is the only record that anything embedding the handler got it wrong.
+  test('records the validation issues when the arguments are rejected', async () => {
+    const lines = await captureLogs(
+      () => getDraftHandler({draft_id: 'abc'}).catch(() => {})
+    );
+
+    const invalid = lines.find((entry) => entry.msg === 'get_draft.args.invalid');
+    assert.ok(invalid, 'expected a get_draft.args.invalid log line');
+    assert.deepEqual(invalid.issues.map((issue) => issue.path.join('.')), ['draft_id']);
+  });
+
   test('records the id it asked for and what came back', async () => {
     const lines = await captureLogs(() => getDraftHandler({draft_id: 167712345}));
     const find = (msg) => lines.find((entry) => entry.msg === msg);

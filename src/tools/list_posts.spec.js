@@ -231,6 +231,16 @@ describe('listPostsHandler — errors and logging', () => {
     assert.match(error.message, /^SubstackAPIException: 400\b/);
   });
 
+  // Reached only on a direct call — over MCP the SDK rejects first.
+  test('records the validation issues when the arguments are rejected', async () => {
+    const lines = await captureLogs(
+      () => listPostsHandler({status: 'nope'}).catch(() => {})
+    );
+
+    const invalid = find(lines, 'list_posts.args.invalid');
+    assert.deepEqual(invalid.issues.map((issue) => issue.path.join('.')), ['status']);
+  });
+
   test('records the arguments and what came back', async () => {
     const lines = await captureLogs(() => listPostsHandler({status: 'published', search: 'mcp'}));
 

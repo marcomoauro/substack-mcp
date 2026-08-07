@@ -108,6 +108,26 @@ describe('getPublicationStatsHandler', () => {
     assert.match(result.errors.summary, /503/);
   });
 
+  // Reached only on a direct call — over MCP the SDK rejects the unknown key first.
+  test('records the validation issues when the arguments are rejected', async () => {
+    const lines = await captureLogs(
+      () => getPublicationStatsHandler({period: '30d'}).catch(() => {})
+    );
+
+    const invalid = lines.find((entry) => entry.msg === 'get_publication_stats.args.invalid');
+    assert.ok(invalid, 'expected a get_publication_stats.args.invalid log line');
+    assert.match(JSON.stringify(invalid.issues), /period/);
+  });
+
+  test('records that it started, so a call that never returns is still visible', async () => {
+    const lines = await captureLogs(() => getPublicationStatsHandler({}));
+
+    assert.ok(
+      lines.find((entry) => entry.msg === 'get_publication_stats.start'),
+      'expected a get_publication_stats.start log line'
+    );
+  });
+
   test('records what it fetched and what it could not', async () => {
     msw.server.use(msw.statsHandler(VIEWS_30D_URL, () => new HttpResponse('boom', {status: 500})));
 

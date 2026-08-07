@@ -6,6 +6,7 @@ import {
   OPERATORS_BY_TYPE,
 } from './SubscriberQuery.js';
 import {setTestEnv} from '../../../test/helpers/env.js';
+import {captureLogs} from '../../../test/helpers/capture-logs.js';
 
 // The module logs, so the level has to be silenced or the lines land on the reporter.
 let restoreEnv;
@@ -249,6 +250,27 @@ describe('buildSubscriberQuery — search and sort', () => {
       search: 'gmail',
       order_by_desc_nulls_last: 'subscription_created_at',
     });
+  });
+});
+
+describe('buildSubscriberQuery — logging', () => {
+  // The assembled payload is what the API answers 400 about, and the structured arguments alone
+  // do not show it: the whole point of this module is that the two look nothing alike.
+  test('records the payload it assembled', async () => {
+    const lines = await captureLogs(() => buildSubscriberQuery({
+      filters: [{column: 'subscription_type', operator: 'is', value: 'free'}],
+      limit: 10,
+    }));
+
+    const built = lines.find((entry) => entry.msg === 'subscriber_query.built');
+    assert.ok(built, `expected a subscriber_query.built log line, got: ${lines.map((l) => l.msg).join(', ')}`);
+    assert.deepEqual(built.query, {filters: {subscription_type: 'free'}, limit: 10, offset: 0});
+  });
+
+  test('says nothing at all when logging is silenced', async () => {
+    const lines = await captureLogs(() => buildSubscriberQuery({}), {level: 'silent'});
+
+    assert.deepEqual(lines, []);
   });
 });
 

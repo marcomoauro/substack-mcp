@@ -267,6 +267,18 @@ describe('listSubscribersHandler — logging', () => {
     assert.equal(done.returned, 2);
   });
 
+  // Distinct from list_subscribers.query.invalid below: this one fires when the *schema* rejects
+  // the call, before any filter is translated. Reached only on a direct call — over MCP the SDK
+  // answers first.
+  test('records the validation issues when the arguments are rejected', async () => {
+    const lines = await captureLogs(
+      () => listSubscribersHandler({limit: 'many'}).catch(() => {})
+    );
+
+    const invalid = find(lines, 'list_subscribers.args.invalid');
+    assert.deepEqual(invalid.issues.map((issue) => issue.path.join('.')), ['limit']);
+  });
+
   test('records the reason a filter was refused', async () => {
     const lines = await captureLogs(() => listSubscribersHandler({
       filters: [{column: 'user_email_address', operator: 'gt', value: 1}],
