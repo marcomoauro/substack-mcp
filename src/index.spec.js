@@ -133,6 +133,7 @@ describe('entrypoint — stdio transport', () => {
     assert.deepEqual(Object.keys(byName).sort(), [
       'create_draft_post',
       'export_subscribers',
+      'get_analytics',
       'get_draft',
       'get_publication_stats',
       'list_posts',

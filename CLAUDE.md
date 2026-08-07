@@ -121,6 +121,21 @@ export is usually already done. Four things this flow gets wrong if taken at fac
 `src/api/substack/csv.js` is a ~40-line parser rather than a dependency. `split(',')` is not enough
 and fails *silently*: a subscriber named `Smith, John` shifts every later column of that one row.
 
+**The analytics reports live in one registry**, `ANALYTICS_REPORTS` in `src/tools/get_analytics.js`:
+17 verified endpoints under `/publication/stats/`, exposed as one tool with a `report` enum rather
+than 17 near-identical tools, which would make a model's choice harder rather than easier. Each entry
+carries its path, whether it takes a date window (`from_date`/`to_date`, or full ISO `start`/`end`
+for retention), a default `limit` for the two that answer 400 without one, and the fixed extras the
+dashboard always sends. **An unexpected parameter is a 400 on several of these**, so a parameter that
+does not apply to the chosen report is dropped *and named* in `ignored_params` — the same
+silent-drop hazard as `columnView` and the export's columns, which is now three for three.
+
+**Two endpoints next to them are broken upstream, not mis-called:**
+`/publication/stats/audience_insights/location` (the subscriber map) and
+`/publication/stats/visitor_sources` answer **400 even for Substack's own dashboard** — observed in
+the page's own network log, with and without parameters. They are deliberately absent from the
+registry, and `get_analytics.spec.js` asserts they stay absent. Do not "fix" them by guessing params.
+
 **`GET /api/v1/post_management/{drafts,published,scheduled}`** lists posts. `order_by` is **not
 optional**: `scheduled` answers 400 without it, which is why `src/tools/list_posts.js` keeps a
 default per status rather than letting the server choose. Free-text search is `query`, and a null

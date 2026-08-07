@@ -102,6 +102,12 @@ export const DASHBOARD_SUMMARY_RESPONSE = {
 export const OPEN_RATE_RESPONSE = {openRate: 0.42, openRateDiff: 0.01};
 export const VIEWS_30D_RESPONSE = {views30d: 5000, viewsDelta30d: 250};
 
+export const PUBLICATION_STATS_URL = `${API}/publication/stats`;
+
+// One payload for every analytics report: the tool passes the body through untouched, so what it is
+// matters far less than which path was asked for and with which parameters.
+export const ANALYTICS_RESPONSE = {rows: [{label: 'a', value: 1}], total: 1};
+
 /**
  * Creates the MSW server used by the integration tests.
  *
@@ -168,6 +174,15 @@ export function createMswServer() {
     });
   }
 
+  // A catch-all for the analytics reports: their paths are two and three segments deep, so `*`
+  // matches any of them. Registered last so the narrower stats handlers above still win.
+  function analyticsHandler(responder) {
+    return http.get(`${PUBLICATION_STATS_URL}/*`, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
   function subscriberSetHandler(responder) {
     return http.post(SUBSCRIBER_SET_URL, async ({request}) => {
       await record(request);
@@ -216,7 +231,10 @@ export function createMswServer() {
     exportFileHandler(() => new HttpResponse(EXPORT_CSV, {
       status: 200,
       headers: {'Content-Type': 'text/csv'},
-    }))
+    })),
+    // Last on purpose: MSW resolves in registration order, so the two narrower
+    // /publication/stats/... handlers above keep their own payloads and this catches the rest.
+    analyticsHandler(() => HttpResponse.json(ANALYTICS_RESPONSE, {status: 200}))
   );
 
   return {
@@ -227,6 +245,7 @@ export function createMswServer() {
     postsHandler,
     draftDetailHandler,
     statsHandler,
+    analyticsHandler,
     subscriberSetHandler,
     exportRequestHandler,
     exportStatusHandler,
