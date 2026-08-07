@@ -124,6 +124,43 @@ Then two deliberate relaxations, each with its own reason:
   the `unsupported` idea moved to the input side, where the earlier experiment proved it actually
   fires.
 
+### At most one paywall, and we are the only ones enforcing it
+
+A document may carry **one** `paywall` node. Measured on 2026-08-07: a body with two paywalls is
+accepted by `PUT /api/v1/drafts/:id` with a **200**, stored with both, and the editor then renders
+**both** as "Paid content below this line" — so neither the API nor the editor guards this, and which
+of the two actually cuts the post is undefined.
+
+So this constraint does not mirror a server rule; it is a `.refine()` on the document that will be the
+only check in existence. That makes it worth having rather than presumptuous: two paywalls is not a
+style preference, it is an ambiguous post, and the failure is invisible until a paying subscriber sees
+what a free one also saw.
+
+The line this stays on: the schema encodes **Substack's rules**, not editorial taste. Levels 1–6, a
+`caption` only inside a `captionedImage`, `href` required on a link, one paywall — all properties of
+the format. Requiring that a post *have* a heading, an image or a paywall would be our preference
+wearing the format's clothes, and would reject a perfectly good three-paragraph post.
+
+### The result echoes what was stored
+
+Validation cannot deliver "the post came out the way we wanted", and the experiment behind this design
+proves it: the Markdown model produced a document that **passes this very schema** and had lost its
+paywall. Nothing was illegal; something was missing, and legality has no opinion about missing.
+
+So `set_post_body` returns the shape of what it stored, not `'OK'`:
+
+```
+{draft_id, nodes: {paragraph: 12, heading: 3, captionedImage: 1, button: 1, paywall: 1},
+ passed_through: ['digestPostEmbed']}
+```
+
+A caller that asked for a paywall can see whether there is one. This is the same reasoning that makes
+`create_draft_post` return `draft_id` rather than `'OK'` — the log goes to stderr where the model
+cannot read it, so the result is the only channel back. A node tally costs a few lines and closes
+precisely the gap validation is blind to.
+
+### The error messages
+
 The discriminated union is what makes the errors worth publishing. Measured on the real schema:
 
 ```
@@ -139,8 +176,9 @@ including a two-deep nested list, and converting to draft-7 with a self-containe
 ## Testing
 
 `document.spec.js`, colocated and table-driven: every modelled node, marks nested inside list items
-and blockquotes, `attrs` passthrough, an unknown node type reaching `passed_through`, and the four
-error messages above pinned by wording — `src/server.spec.js` already pins validation wording on
+and blockquotes, `attrs` passthrough, an unknown node type reaching `passed_through`, a second
+`paywall` rejected, the node tally counting what was stored, and the four error messages above pinned
+by wording — `src/server.spec.js` already pins validation wording on
 purpose, because a degraded message breaks nothing by itself and only an assertion catches it.
 
 Two fixtures earn their place: a **real post document** pulled from the publication, asserting it
