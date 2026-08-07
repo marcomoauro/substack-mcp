@@ -48,6 +48,16 @@ Baseline before you begin: 590 tests passing.
 
 `document.js` will end up around 200 lines and that is its whole job. Do not put the tool's logging or the API call in it.
 
+**Two conventions every node added in Tasks 2–4 must follow**, both established by the Task 1 review:
+
+- **Every node and mark carries a `.describe()`.** The schema is published as a tool's JSON Schema and
+  the descriptions are how a calling model learns the vocabulary — a node without one is invisible to
+  the caller. Task 1 adds a test that loops over every branch of the document union and asserts each
+  has a description, so a new node with no description **fails the suite**. That is deliberate.
+- **Pin what you add.** Before committing, mutate the thing you just wrote — swap a `strictObject` for
+  `z.object`, drop a required field, widen a bound — grep to confirm the mutation landed, and check a
+  test goes red. The Task 1 review found three surviving mutants in code that looked well tested.
+
 ---
 
 ## Task 1: The document module — marks, text, paragraph, heading
@@ -1471,6 +1481,10 @@ describe('set_post_body over the protocol', () => {
 
   // The recursion has to survive conversion, and draft-7 puts the shared shapes under `definitions`.
   // A $ref pointing at a definition that is not there would publish a schema no client can resolve.
+  //
+  // Asserting refs *exist* first is the point: the Task 1 reviewer found that with no recursion the
+  // schema contains zero $refs, so a loop over discovered refs passes while checking nothing. The
+  // recursive list and blockquote nodes are what put them there.
   test('publishes a self-contained schema, definitions included', async () => {
     const {client, close} = await connect();
 
@@ -1478,6 +1492,8 @@ describe('set_post_body over the protocol', () => {
       const {tools} = await client.listTools();
       const schema = tools.find(t => t.name === 'set_post_body').inputSchema;
       const refs = [...JSON.stringify(schema).matchAll(/"\$ref":"#\/definitions\/([^"]+)"/g)].map(m => m[1]);
+
+      assert.ok(refs.length > 0, 'the recursive nodes should produce at least one $ref');
 
       for (const ref of refs) {
         assert.ok(schema.definitions?.[ref], `definitions.${ref} should exist`);

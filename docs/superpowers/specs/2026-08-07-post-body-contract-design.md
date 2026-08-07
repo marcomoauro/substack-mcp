@@ -227,6 +227,19 @@ confirm each renders — the same loop that produced the node shapes, and the on
 name right in the spec and wrong in the code. Then a real post read, validated, and written back
 unchanged, asserting the round trip preserves what it passed through.
 
+### What the 16 KB is actually made of
+
+Measured during the Task 1 review: the SDK converts with `z4mini.toJSONSchema(schema, {target, io})`
+and passes no `reused` option, so shared subtrees are **inlined**, not referenced. On a two-node
+schema that already means 80% of the published bytes are two verbatim copies of the inline-content and
+mark union. Passing `reused: 'ref'` would shrink it, but `registerTool` gives no way to reach that
+option, and the names it generates are machine-made (`__schema0`…).
+
+So the 16 KB figure is not a ceiling that better factoring would lower — it is what this schema costs
+through the SDK, and each further node carrying inline content adds roughly another 1.7 KB. Worth
+knowing before anyone tries to optimise it, and worth re-measuring rather than assuming if the node
+list grows much beyond the current fourteen.
+
 ## Limits
 
 **Images can be referenced but not uploaded**, and this is the design's sharpest practical limit:
