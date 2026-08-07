@@ -72,6 +72,32 @@ describe('summarizeComment', () => {
     assert.equal(summarizeComment(COMMENT).reply_count, 7);
   });
 
+  // Two shapes exist, both measured. Creating a comment answers with the collections and *no* counts,
+  // and the create path runs through this same summarizer — so reading only the counts reports a
+  // freshly created comment's replies and reactions as absent rather than as zero-or-more.
+  test('falls back to the collections the create response carries instead of counts', () => {
+    const created = {
+      id: 309931681,
+      name: 'Marco Moauro',
+      body: 'A new comment',
+      ancestor_path: '',
+      children: [{id: 1}, {id: 2}],
+      reactions: {'❤': 3},
+    };
+
+    const result = summarizeComment(created);
+
+    assert.equal(result.reply_count, 2);
+    assert.equal(result.reactions, 1);
+  });
+
+  test('prefers the counts when both shapes are present', () => {
+    const both = {...COMMENT, children: [{id: 1}], reactions: {'❤': 1}};
+
+    assert.equal(summarizeComment(both).reply_count, 7);
+    assert.equal(summarizeComment(both).reactions, 4);
+  });
+
   test('resolves the thread position from ancestor_path', () => {
     const result = summarizeComment(COMMENT);
 

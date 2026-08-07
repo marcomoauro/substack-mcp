@@ -2,28 +2,23 @@ import {z} from "zod";
 import SubstackApi from "../api/substack/SubstackApi.js";
 import {logger} from "../logger.js";
 
-// Exactly one of the two ids, enforced by the schema rather than checked in the handler: the API
-// takes both keys and there is no documented behaviour for sending both, so making the pair
-// unrepresentable is better than discovering what it does.
+// Notes only. The fork this was ported from also offered `post_id`, but a published post from the
+// caller's own publication answers `404 "Post da Restack non trovato"` — measured — so whatever that
+// path wants is not an id from `list_posts`. A parameter that 404s on a valid id is worse than an
+// absent one: the caller reads it as the post being gone rather than as the tool being wrong.
 export const restackItemSchema = z.strictObject({
-  post_id: z
-    .number()
-    .int()
-    .optional()
-    .describe("Restack a post, by id. Provide either post_id or comment_id, never both."),
   comment_id: z
     .number()
     .int()
-    .optional()
-    .describe("Restack a Note or comment, by id. Provide either post_id or comment_id, never both."),
+    .describe(
+      "The numeric id of the Note to restack, from get_reader_feed or get_profile_feed. Without the " +
+      "`c-` prefix Substack uses in its urls."
+    ),
   tab_id: z
     .string()
     .default('for-you')
     .describe("The feed tab the restack is attributed to. Defaults to 'for-you'."),
-}).refine(
-  (value) => (value.post_id === undefined) !== (value.comment_id === undefined),
-  {message: 'Provide exactly one of post_id or comment_id'}
-);
+});
 
 export const restackItemHandler = async (args) => {
   logger.debug('restack_item.start', {args});
@@ -38,33 +33,26 @@ export const restackItemHandler = async (args) => {
     throw error;
   }
 
-  const {post_id, comment_id, tab_id} = validatedArgs;
+  const {comment_id, tab_id} = validatedArgs;
 
   const substack_api = new SubstackApi({
     publication_url: process.env.SUBSTACK_PUBLICATION_URL,
     auth_token: process.env.SUBSTACK_SESSION_TOKEN,
   });
 
-  // Logged before the request: a restack appears on your profile and to your followers, and this
-  // server offers no way to undo one, so the log is the only record that it happened.
-  logger.info('restack_item.restacking', {post_id: post_id ?? null, comment_id: comment_id ?? null, tab_id});
+  // Logged before the request. A restack appears on your profile and to your followers, and it cannot
+  // be undone from here — it has no id of its own, so there is nothing to delete — which makes this
+  // line the only record that it happened and of what.
+  logger.info('restack_item.restacking', {comment_id, tab_id});
 
-  const result = await substack_api.restackFeedItem({
-    post_id: post_id ?? null,
-    comment_id: comment_id ?? null,
-    tab_id,
-  });
+  const result = await substack_api.restackNote(comment_id, {tab_id});
 
-  logger.info('restack_item.done', {
-    post_id: post_id ?? null,
-    comment_id: comment_id ?? null,
-    restack_id: result?.id ?? null,
-  });
+  logger.info('restack_item.done', {comment_id, restack_id: result?.id ?? null});
 
   return {
     status: 'restacked',
-    ...(post_id === undefined ? {} : {post_id}),
-    ...(comment_id === undefined ? {} : {comment_id}),
+    comment_id,
     restack_id: result?.id ?? null,
+    note: 'A restack cannot be undone through this server; remove it from the Substack UI.',
   };
 };

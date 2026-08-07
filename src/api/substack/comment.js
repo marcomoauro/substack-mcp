@@ -51,9 +51,13 @@ export function summarizeComment(comment) {
     body: comment.body ?? null,
     date: comment.date ?? null,
     edited_at: comment.edited_at ?? null,
-    reactions: comment.reaction_count ?? 0,
+    // Two shapes exist, both verified. Reads and feed entries carry the counts (`reaction_count`,
+    // `children_count`); the response to *creating* a comment carries the collections instead
+    // (`reactions` as an object, `children` as an array) and no counts at all. Both are handled
+    // because the create path runs through this same summarizer.
+    reactions: comment.reaction_count ?? Object.keys(comment.reactions ?? {}).length,
     restacks: comment.restacks ?? 0,
-    reply_count: comment.children_count ?? 0,
+    reply_count: comment.children_count ?? (comment.children ?? []).length,
     // null on a Note, set on a post comment — which is also how to tell the two apart.
     post_id: comment.post_id ?? null,
     publication_id: comment.publication_id ?? null,

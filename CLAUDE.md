@@ -220,6 +220,27 @@ with the rest of this API, and were wrong in the fork this was ported from:
 withheld and never appears in the first, so merging or dropping it turns "held" into "nobody
 commented".
 
+**There is a *second* comment shape, and it is the one you get back from writing.** `POST
+/post/:id/comment` answers with the comment directly — no envelope — but carrying `children` (an
+array) and `reactions` (an object) instead of `children_count` and `reaction_count`. Both paths run
+through the same `summarizeComment`, so it reads the counts and falls back to the collections.
+Verified alongside it: **`DELETE /api/v1/comment/:id` answers 200** and the comment leaves the post,
+which is why `comment_on_post` is a write this server is willing to make.
+
+**A restack, by contrast, cannot be undone.** `POST /restack/feed` is real and verified, and three
+things about it were measured the hard way:
+
+- **The body keys are camelCase** — `commentId`, `tabId` — unlike almost everything else here.
+  Confirmed by elimination: `{post_id, tab_id}` answers `400 "Devi fornire postId o commentId"`, the
+  API naming the keys it wanted.
+- **Restacking a post does not work through it.** `{postId, tabId}` answers
+  `404 "Post da Restack non trovato"` for a published post on the caller's own publication, so
+  whatever that path needs is not an id from `list_posts`. `restack_item` therefore takes only a Note.
+- **A restack has no id of its own.** It surfaces the *original* Note with `context: comment_restack`
+  in the profile feed, so `DELETE /comment/:id` would target someone else's Note rather than the
+  restack. Un-restacking is a UI toggle with no endpoint found in a full sweep of all 109 scripts on
+  `substack.com` — `restack/feed` appears there exactly once, and only as the create path.
+
 **Three endpoints return heterogeneous arrays, and only some entries carry content.** This is the
 same silent-drop family as `columnView` and the export's columns, seen from the other side — here the
 hazard is mapping straight through and *inventing* empty entries:

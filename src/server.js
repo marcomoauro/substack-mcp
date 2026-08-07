@@ -202,8 +202,9 @@ export const tools = {
   },
   restack_item: {
     description:
-      "Restack a post or a Note to your own followers. This is public and appears on your profile; " +
-      "this server offers no way to undo it. Provide exactly one of post_id or comment_id.",
+      "Restack a Note to your own followers. This is public, appears on your profile, and cannot be " +
+      "undone from here — a restack has no id of its own, so there is nothing to delete. Notes only: " +
+      "restacking a post is not supported, because that endpoint 404s even on a valid post id.",
     schema: restackItemSchema,
     handler: restackItemHandler,
   },

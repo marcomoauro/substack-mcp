@@ -243,8 +243,9 @@ separate array upstream, and dropping them silently would turn "held" into "nobo
 
 **Returns**: `{status, post_id, comment}`.
 
-This is published under your name, and this server offers no way to delete it. The full text is
-logged at `info` before the request, since the log is the only record of what was said.
+This is published under your name. The full text is logged at `info` before the request, since the log
+is the only record of what was said. This server does not expose deletion, but the comment can be
+removed from the Substack UI — unlike a restack, a comment does have an id of its own.
 </details>
 
 The seven tools below read **`substack.com`**, not your publication. They are about the account as a
@@ -333,17 +334,21 @@ branch is a direct reply plus its descendants, with `parent_comment_id` and `dep
 </details>
 
 <details>
-<summary><strong>restack_item</strong> - Restack a post or Note</summary>
+<summary><strong>restack_item</strong> - Restack a Note</summary>
 
-**Inputs**: exactly one of
-- `post_id` (number)
-- `comment_id` (number)
+**Inputs**:
+- `comment_id` (number): the Note to restack, from `get_reader_feed` or `get_profile_feed`
+- `tab_id` (string, optional): defaults to `for-you`
 
-plus `tab_id` (string, optional), defaulting to `for-you`.
+**Returns**: `{status, comment_id, restack_id, note}`.
 
-**Returns**: `{status, restack_id}`.
+This is public and appears on your profile, and **cannot be undone from here**: a restack has no id of
+its own — it surfaces the original Note with `context: comment_restack` — so there is nothing for this
+server to delete. Remove it from the Substack UI.
 
-This is public and appears on your profile. This server offers no way to undo it.
+Notes only. Restacking a *post* is not offered: that call answers `404` even for a published post on
+your own publication, so a `post_id` parameter would produce an error that reads as the post being
+gone rather than as the tool being wrong.
 </details>
 
 <details>

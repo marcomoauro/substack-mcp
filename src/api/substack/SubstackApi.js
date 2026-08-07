@@ -395,20 +395,26 @@ export default class SubstackApi {
   }
 
   /**
-   * Restacks a post or a Note to your own followers.
+   * Restacks a Note to your own followers. Verified against the live API.
    *
-   * UNVERIFIED: this publishes to your profile, and confirming it means leaving a real restack
-   * behind. Path and body come from the dashboard's own traffic as read by the fork.
+   * The body keys are **camelCase**, unlike almost everything else this class sends. Confirmed by
+   * elimination rather than by reading the bundle: `{post_id, tab_id}` answers
+   * `400 "Devi fornire postId o commentId"` — the API naming the keys it wanted.
+   *
+   * Restacking a *post* is deliberately not offered. `{postId, tabId}` answers
+   * `404 "Post da Restack non trovato"` even for a published post on the caller's own publication, so
+   * whatever that path needs is not a post id from `list_posts`. A parameter that 404s on a valid id
+   * is worse than an absent one: it reads as the post being gone.
+   *
+   * There is no undo. A restack has no id of its own — it surfaces the original Note with
+   * `context: comment_restack` — so it cannot be removed with `DELETE /comment/:id`, which would
+   * target someone else's Note. Un-restacking is a UI action this server does not expose.
    */
-  async restackFeedItem({post_id = null, comment_id = null, tab_id = 'for-you'} = {}) {
+  async restackNote(comment_id, {tab_id = 'for-you'} = {}) {
     return this.requestGlobal({
       method: 'POST',
       path: '/restack/feed',
-      body: {
-        ...(post_id === null ? {} : {postId: Number(post_id)}),
-        ...(comment_id === null ? {} : {commentId: Number(comment_id)}),
-        tabId: tab_id,
-      },
+      body: {commentId: Number(comment_id), tabId: tab_id},
       referer: '/notes',
     });
   }
@@ -427,8 +433,12 @@ export default class SubstackApi {
   }
 
   /**
-   * Posts a comment on one of your posts, as you. UNVERIFIED: confirming it means leaving a public
-   * comment on a real post.
+   * Posts a comment on one of your posts, as you. Verified end to end against the live API, including
+   * removal: `DELETE /api/v1/comment/:id` answers 200 and the comment is gone from the post.
+   *
+   * The response is the comment itself, not an envelope — but in a *different* shape from the one
+   * reads return: it carries `children` (an array) and `reactions` (an object) rather than
+   * `children_count` and `reaction_count`. `summarizeComment` handles both.
    */
   async commentOnPost(post_id, body) {
     return this.request({
