@@ -13,9 +13,16 @@ A Model Context Protocol (MCP) Server for [Substack](https://substack.com) enabl
 **Inputs**:
 - `title` (string): Title of the post
 - `subtitle` (string): Subtitle of the post
-- `body` (string): Body of the post
+- `body` (string): Body of the post. Plain text becomes one paragraph per line — **Markdown is not
+  interpreted**, so `## Heading` arrives literally. A JSON string of a Substack document also works
+  and is validated against the same schema `set_post_body` publishes, so an unrecognised node name
+  is an error rather than a silently mangled post.
 
 **Returns**: `{draft_id, is_published}`. Pass `draft_id` to `get_draft` to read the draft back.
+
+For anything structured — headings, lists, links, code, images, a paywall — use `set_post_body`
+after creating the draft: the schema is published there, so the calling model can read the node
+vocabulary rather than guess at it.
 </details>
 
 <details>
@@ -109,6 +116,36 @@ There is no paging: an export covers the whole matching set.
 - `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
 
 **Returns**: the draft as Substack stores it, body and audience/email settings included.
+</details>
+
+<details>
+<summary><strong>set_post_body</strong> - Replace a draft's body with a structured document</summary>
+
+The only way to write structured content: headings, lists, links, code blocks, quotes, images,
+buttons and a paywall. `create_draft_post` takes plain text; this takes the document Substack
+actually stores, and its schema is published in `tools/list` so the calling model can read the node
+vocabulary instead of guessing.
+
+**Inputs**:
+- `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
+- `body` (object): a Substack ProseMirror document — `{type: 'doc', content: [...]}`
+
+Fifteen node types are accepted: `paragraph`, `heading`, `bullet_list`, `ordered_list`, `list_item`,
+`blockquote`, `highlighted_code_block`, `code_block`, `horizontal_rule`, `captionedImage`, `button`,
+`paywall`, `youtube2`, plus `digestPostEmbed`, `substack_mentions` and `directMessage` passed through
+unchanged so a document read with `get_draft` can be written back. Marks: `strong`, `em`, `code`,
+`strikethrough`, `link`.
+
+**Returns**: `{draft_id, nodes}`, where `nodes` counts what was stored by type — so a caller that
+asked for a paywall can confirm there is one. Validation cannot report a node that was never sent.
+
+Three things worth knowing:
+- **An image must already be hosted by Substack.** `image2.src` pointing at an external URL is
+  stored but does not render, and this server cannot upload one.
+- **A document may contain at most one `paywall`.** Substack accepts two and renders both, leaving
+  it undefined which one cuts the post, so this tool refuses the second.
+- **`ordered_list` numbers from `attrs.order`, not `attrs.start`.** A list given only `start`
+  renders from 1 with no error.
 </details>
 
 <details>

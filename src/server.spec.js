@@ -1,7 +1,9 @@
 import {test, describe, before, after, afterEach} from 'node:test';
+import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 import {HttpResponse} from 'msw';
 import {connectMcpClient} from '../test/helpers/mcp-harness.js';
+import {tools} from './server.js';
 import {createMswServer, DRAFTS_URL} from '../test/helpers/msw-server.js';
 import {setTestEnv} from '../test/helpers/env.js';
 import {captureLogs} from '../test/helpers/capture-logs.js';
@@ -62,6 +64,7 @@ describe('MCP server — list_tools', () => {
     'list_subscriptions',
     'publish_draft',
     'restack_item',
+    'set_post_body',
     'update_draft',
   ];
 
@@ -328,5 +331,153 @@ describe('MCP server — call_tool', () => {
     } finally {
       await close();
     }
+  });
+});
+
+describe('MCP server — set_post_body over the protocol', () => {
+  async function publishedSchema() {
+    const {client, close} = await connectMcpClient();
+
+    try {
+      const {tools} = await client.listTools();
+      return tools.find(tool => tool.name === 'set_post_body')?.inputSchema;
+    } finally {
+      await close();
+    }
+  }
+
+  test('is registered and published with exactly a draft_id and a body', async () => {
+    const schema = await publishedSchema();
+
+    assert.ok(schema, 'set_post_body should be registered');
+    assert.deepEqual(Object.keys(schema.properties).sort(), ['body', 'draft_id']);
+    assert.equal(schema.additionalProperties, false);
+  });
+
+  // The published schema is what teaches a model the vocabulary. If the node names stop appearing in
+  // it the tool still works and every caller has to guess, which no other test would notice.
+  test('publishes the node vocabulary a caller has to know', async () => {
+    const published = JSON.stringify(await publishedSchema());
+
+    for (const type of [
+      'paragraph', 'heading', 'bullet_list', 'ordered_list', 'blockquote',
+      'highlighted_code_block', 'code_block', 'horizontal_rule', 'paywall',
+      'captionedImage', 'image2', 'caption', 'button', 'youtube2',
+      'digestPostEmbed', 'substack_mentions', 'directMessage',
+      'strong', 'em', 'code', 'strikethrough', 'link',
+    ]) {
+      assert.match(published, new RegExp(`"${type}"`), `${type} should appear in the published schema`);
+    }
+  });
+
+  // The recursion has to survive conversion, and draft-7 puts the shared shapes under `definitions`.
+  // Asserting the refs *exist* first is the point: with no recursion the schema contains none, so a
+  // loop over discovered refs would pass while checking nothing.
+  test('publishes a self-contained schema, definitions included', async () => {
+    const schema = await publishedSchema();
+    const refs = [...JSON.stringify(schema).matchAll(/"\$ref":"#\/definitions\/([^"]+)"/g)].map(m => m[1]);
+
+    assert.ok(refs.length > 0, 'the recursive list and blockquote nodes should produce at least one $ref');
+
+    for (const ref of refs) {
+      assert.ok(schema.definitions?.[ref], `definitions.${ref} should exist`);
+    }
+  });
+
+  // McpServer turns anything a tool throws into a *successful* CallToolResult with isError set, so
+  // callTool does not reject. Asserting on a rejection here would check nothing.
+  test('reports an unmodelled node as an error result rather than rejecting', async () => {
+    const {client, close} = await connectMcpClient();
+
+    try {
+      const result = await client.callTool({
+        name: 'set_post_body',
+        arguments: {draft_id: 1, body: {type: 'doc', content: [{type: 'codeBlock'}]}},
+      });
+
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /discriminator|codeBlock|Invalid/);
+    } finally {
+      await close();
+    }
+  });
+
+  test('reports a second paywall as an error result', async () => {
+    const {client, close} = await connectMcpClient();
+
+    try {
+      const result = await client.callTool({
+        name: 'set_post_body',
+        arguments: {draft_id: 1, body: {type: 'doc', content: [{type: 'paywall'}, {type: 'paywall'}]}},
+      });
+
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /at most one paywall/i);
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('MCP server — the cost of the published document schema', () => {
+  // The document schema is the largest thing this server publishes, and the reason it lives on
+  // set_post_body alone. Nothing else stops someone adding `body: postBodySchema` to a second tool,
+  // where it would be paid again by every session — including the ones that never write a post. This
+  // test is that stop: it asserts the node vocabulary appears in exactly one tool's inputSchema.
+  test('publishes the document vocabulary on exactly one tool', async () => {
+    const {client, close} = await connectMcpClient();
+
+    try {
+      const {tools} = await client.listTools();
+      const carrying = tools
+        .filter(tool => JSON.stringify(tool.inputSchema).includes('"highlighted_code_block"'))
+        .map(tool => tool.name);
+
+      assert.deepEqual(carrying, ['set_post_body']);
+    } finally {
+      await close();
+    }
+  });
+
+  // Not an exact byte count — that would rot on every node added. A ceiling, so a change that
+  // doubles what every session downloads fails here instead of going unnoticed.
+  test('keeps the published schema under 32 KB', async () => {
+    const {client, close} = await connectMcpClient();
+
+    try {
+      const {tools} = await client.listTools();
+      const schema = tools.find(tool => tool.name === 'set_post_body').inputSchema;
+      const bytes = JSON.stringify(schema).length;
+
+      assert.ok(bytes < 32768, `the published schema is ${bytes} bytes, which is over the 32 KB ceiling`);
+      assert.ok(bytes > 8192, `the published schema is only ${bytes} bytes — did the node union shrink?`);
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('README — documents every registered tool', () => {
+  // The README is the only documentation a user of the published package reads, and nothing else
+  // keeps it in step with the registry: set_post_body shipped registered but undocumented, and no
+  // test noticed. This compares the two sets in both directions, because each failure hurts
+  // differently — a tool missing from the README is invisible to whoever installs the package, while
+  // a README entry with no tool behind it sends someone to call something that answers an error.
+  const readmeToolNames = () => {
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+
+    // Only lowercase snake_case names: the same markup wraps the two installation options
+    // ("Option 1: Using NPX"), which are not tools.
+    return [...readme.matchAll(/<summary><strong>([a-z_]+)<\/strong>/g)].map(match => match[1]).sort();
+  };
+
+  test('every registered tool has a README section, and every documented tool is registered', () => {
+    assert.deepEqual(readmeToolNames(), Object.keys(tools).sort());
+  });
+
+  test('no tool is documented twice', () => {
+    const documented = readmeToolNames();
+
+    assert.deepEqual(documented, [...new Set(documented)]);
   });
 });

@@ -1,5 +1,6 @@
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {createDraftPostSchema, createDraftPostHandler} from "./tools/create_draft_post.js";
+import {setPostBodySchema, setPostBodyHandler} from "./tools/set_post_body.js";
 import {listSubscribersSchema, listSubscribersHandler} from "./tools/list_subscribers.js";
 import {exportSubscribersSchema, exportSubscribersHandler} from "./tools/export_subscribers.js";
 import {listPostsSchema, listPostsHandler} from "./tools/list_posts.js";
@@ -31,6 +32,19 @@ export const tools = {
     description: "create a draft post on your Substack account.",
     schema: createDraftPostSchema,
     handler: createDraftPostHandler,
+  },
+  set_post_body: {
+    // This is the only tool that publishes the document schema, and the description points at it
+    // rather than restating the node list: the schema is the vocabulary, and a summary here would be
+    // a second copy of it that can drift.
+    description:
+      "replace the body of a draft with a Substack document. This is the only way to write " +
+      "structured content — headings, lists, links, code blocks, images, buttons and a paywall. " +
+      "Create the draft first with create_draft_post, then call this with its id. The result " +
+      "reports how many nodes of each type were stored, so a caller can confirm that what it " +
+      "asked for is there. An image must already be hosted by Substack: this cannot upload one.",
+    schema: setPostBodySchema,
+    handler: setPostBodyHandler,
   },
   list_subscribers: {
     // The engagement caveat still belongs in the description: this endpoint takes the fields it

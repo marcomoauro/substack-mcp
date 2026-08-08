@@ -275,10 +275,75 @@ browser download, a broken Docker image, and a technique that breaks on Cloudfla
 Also skipped: `update_payment_settings` (paywall pricing from an LLM), deleting *published* posts,
 and a hand-maintained `list_resources` catalog — a second tool list that can drift from `tools/list`.
 
+**The forks are exhausted, and a re-survey costs more than it returns.** All eight were compared
+against `main` again on 2026-08-07, after #18: five are zero-commit snapshots, `adamhwoodworth`'s
+`fix-draft-body-double-encoding` is already merged as #4 (its two residual commits carry a `parseBody`
+test this repo has in English *plus* the logging assertions), and `jcllobet`'s reader work went in
+with #18. Only `jefflee1990710` still holds anything, and it is one coherent area rather than a list:
+**account and publication settings** — `PUT /api/v1/publication` (`name`, `hero_text`, `copyright`,
+`email_from_name`, `logo_url`), `PUT substack.com/api/v1/user/profile` (`name`, `bio`, `photo_url`),
+and the `POST substack.com/api/v1/image` upload both depend on, since per the fork an external url is
+stored but does not render. That upload is also the only route to an image *inside* a post, which
+nothing here can do. All three are unverified writes from the fork that invented `share_automatically`,
+so none of it ships without a live check first; they are open by choice, not by oversight.
+
 **Writes log their intent at `info` *before* the request**, not only their outcome —
 `publish_draft.publishing`, `comment_on_post.posting`, `restack_item.restacking`, with the full text
 where there is one. Nothing in this server can unpublish, delete a comment or undo a restack, so that
 line is the only record that it happened.
+
+**The post body has a contract, and `set_post_body` is where it lives.** `src/api/substack/document.js`
+models the ProseMirror document in zod — a discriminated union over the fifteen node types observed in
+the live archive, published as that tool's JSON Schema so a calling model reads the vocabulary from
+`tools/list` instead of guessing. It is the only tool that publishes it: at roughly 21 KB, carrying it on
+`create_draft_post` and `update_draft` too would more than double a `tools/list` that is 56 KB with one
+copy. `create_draft_post`'s JSON branch runs the **same validator without publishing it**, which cost
+nothing and closed the last route that accepted a body unchecked. Six measured facts shape it:
+
+- **The code block is `highlighted_code_block`.** `python-substack` declares `codeBlock`, which is not
+  what the editor writes and does not render. Both that and the legacy `code_block` are accepted —
+  16 occurrences against 5 in the survey, so refusing the old one would refuse those posts.
+- **`order` numbers a list, not `start`.** A list given `{start: 3}` is stored verbatim, answers 200 and
+  renders from **1**; `{order: 3}` renders from 3. The editor writes both, so reading its own output
+  suggests either would do — this is the **sixth** silent-ignore in this API and the only one this
+  server nearly authored itself.
+- **`type` is strict, `attrs` are loose**, in opposite directions on purpose. The editor writes
+  `textAlign: null` on every block and `nodeId: null` on code blocks, so strict attrs would reject every
+  real post; the discriminated union on `type` is what produces `Invalid discriminator value. Expected
+  'paragraph' | 'heading' | …`, the only repair instruction an LLM gets. **A generic unknown-node branch
+  was tried and rejected**: it keeps a malformed `heading` out but reports only the generic branch's
+  error, so the caller never learns which field is wrong. Every observed type is enumerated instead,
+  including three whose internals were never read — `digestPostEmbed`, `substack_mentions`,
+  `directMessage` — as `looseObject`s that survive a round trip whole. `digestPostEmbed` alone is in 59
+  of 60 sampled posts, so this is what makes read-modify-write possible at all.
+- **Survey both publications before trusting the enumeration.** The first pass covered `implementing`
+  only and missed `youtube2`, which is in 33 of 40 sampled `quickviewai` posts — `{videoId}`, no content.
+  22 real posts across both now validate with no unknown node, no unknown mark and every required attr
+  present.
+- **A document may carry one `paywall`, and we are the only ones enforcing it.** Two are accepted with a
+  200 and rendered as two "Paid content below this line" markers, leaving it undefined which one cuts
+  the post. Since a `.refine()` does **not** survive into the published JSON Schema, the rule is repeated
+  in the node's description or a model meets it only by failing.
+- **The code-block `language` is a closed set that fails silently.** `auto` is the auto-detect sentinel,
+  `plaintext` the plain-text value, and an unrecognised name renders as Plain Text with no error, so
+  omitting the attr beats guessing.
+
+**Images can be referenced but not uploaded**, which is the contract's sharpest limit: `captionedImage`
+is in 60 of 60 sampled posts and `image2.src` must already point at a Substack-hosted asset.
+`POST /api/v1/image` was tried on the publication host as JSON, as form-urlencoded and as multipart —
+**all three hang**, the network log showing the request pending past a minute with no response, and the
+cross-origin `substack.com` attempt never settled either. So neither `python-substack`'s signature nor
+the fork's is confirmed. **Do not implement an upload from either.**
+
+**`set_post_body` returns a node tally, not `'OK'`**, because validation cannot report what was never
+sent: a document with no paywall is exactly as valid as one with a paywall. This was measured — a model
+asked for a paywall through a Markdown contract omitted it, produced valid Markdown, and the document it
+rendered to passes this very schema. The tally is the caller's only way to see what landed.
+
+**The descriptions are load-bearing and a test enforces them.** The published schema is the vocabulary,
+so `document.spec.js` walks the whole converted schema and fails on any union branch without a
+`description`, naming it. The walk is recursive on purpose: `list_item`, `image2` and `caption` are
+reachable only nested, and an earlier top-level-only version left stripping every mark description green.
 
 ## Logging
 
