@@ -391,9 +391,14 @@ Two measured facts shape the tool:
   `src/logger.js` truncates a `data:…;base64,` value to its prefix and omitted length. A post body, being
   prose, is still logged in full — the two are different in kind.
 
-**Still unverified:** every live check used the browser session cookie, not `SUBSTACK_SESSION_TOKEN` in a
-header. Equivalent in principle, unconfirmed through `SubstackApi` — the first thing to check if the tool
-misbehaves against the real API.
+**The header token is verified now, and this is what closed it.** Every earlier live check ran on the
+browser session cookie, leaving `SUBSTACK_SESSION_TOKEN` in a header through `SubstackApi` as the
+untested path. On 2026-08-08 a scratch draft was driven end to end through the real handlers with that
+env var: `create_draft_post` → `update_draft` with all nine settings *and* an external
+`upload.wikimedia.org` cover → `get_draft` → `delete_draft`. All eleven fields read back exactly as
+sent, and the cover came back on `substack-post-media.s3.amazonaws.com`, so the download, the
+`POST /api/v1/image` re-host and the PUT all authenticate the same way the cookie does. Nothing in the
+token path is speculative any more.
 
 **`set_post_body` returns a node tally, not `'OK'`**, because validation cannot report what was never
 sent: a document with no paywall is exactly as valid as one with a paywall. This was measured — a model
