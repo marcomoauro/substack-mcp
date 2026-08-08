@@ -110,6 +110,32 @@ async function readCapped(response, max) {
   return buffer;
 }
 
+// Measured live 2026-08-08: `POST /api/v1/image` answers a url on the S3 bucket, and a cover read
+// back from `list_posts`/`get_draft` arrives rewritten onto the CDN. Anything else has to be
+// re-hosted, because Substack server-fetches only its own bucket — an external url passed as
+// `image` answers `400 "Failed to fetch image"`.
+export const SUBSTACK_IMAGE_HOSTS = new Set([
+  'substack-post-media.s3.amazonaws.com',
+  'substackcdn.com',
+]);
+
+/**
+ * Whether a url is already hosted by Substack and can be written to `cover_image` as-is.
+ *
+ * Exact hostname match, never a substring: `substackcdn.com.evil.example` contains the host and is
+ * not it. Returns false rather than throwing on unparseable input — `cover_image` accepts any
+ * string server-side (`"not-a-url-at-all"` was stored with a 200), so the caller owns that message.
+ */
+export function isSubstackHosted(rawUrl) {
+  let hostname;
+  try {
+    hostname = new URL(rawUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return SUBSTACK_IMAGE_HOSTS.has(hostname);
+}
+
 /**
  * Download a caller-chosen URL and encode it the way `POST /api/v1/image` wants it: a data URI.
  * Every guard lives here so both callers get the same one — there is no unguarded path.
