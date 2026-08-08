@@ -123,3 +123,19 @@ describe('uploadImageHandler — SSRF and scheme guards', () => {
     await assert.rejects(run({url: 'ftp://example.com/x.png'}), /only http and https/);
   });
 });
+
+describe('uploadImageHandler — size cap', () => {
+  test('rejects an image over MAX_IMAGE_BYTES before uploading', async () => {
+    const big = Buffer.alloc(MAX_IMAGE_BYTES + 1, 0xff);
+    msw.server.use(sourceHandler({body: big, type: 'image/png'}));
+    await assert.rejects(run({url: SOURCE}), /over the .* limit/);
+    assert.equal(msw.requests.find((r) => r.url.endsWith('/api/v1/image')), undefined);
+  });
+
+  test('accepts an image exactly at the limit', async () => {
+    const atLimit = Buffer.alloc(MAX_IMAGE_BYTES, 0xff);
+    msw.server.use(sourceHandler({body: atLimit, type: 'image/png'}));
+    const result = await run({url: SOURCE});
+    assert.equal(result.url, IMAGE_UPLOAD_RESPONSE.url);
+  });
+});
