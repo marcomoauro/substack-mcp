@@ -153,16 +153,29 @@ describe('postBodySchema — strictness', () => {
 
 describe('postBodySchema — descriptions', () => {
   // Regression guard for the exact hazard CLAUDE.md records: this schema publishes as a tool's
-  // JSON Schema and the description is the only vocabulary a calling model gets, so stripping every
+  // JSON Schema and the description is the only vocabulary a calling model gets, so stripping any
   // .describe() call must fail a test, not just read badly. z.toJSONSchema with these exact options
   // is the call the SDK itself makes (server/zod-json-schema-compat.js), not an approximation of it.
-  test('every content node carries a description in the published schema', () => {
+  //
+  // The walk covers the whole converted schema, not just the top-level document union: list_item,
+  // image2 and caption (Tasks 2-4) are reachable only nested — inside list nodes and inside
+  // captionedImage — never as a top-level branch, and marks are nested under every text node. A
+  // check that only indexed into content.items.oneOf would be blind to exactly the nodes and marks
+  // that live one level down.
+  test('every node and mark in the published schema carries a description', () => {
     const json = z.toJSONSchema(postBodySchema, {target: 'draft-7', io: 'input'});
-    const branches = json.properties.content.items.oneOf;
+    const missing = [];
 
-    assert.ok(branches.length > 0);
-    for (const branch of branches) {
-      assert.ok(branch.description, `${branch.properties.type.const} node has no description`);
-    }
+    const walk = (node) => {
+      if (!node || typeof node !== 'object') return;
+      for (const branch of node.oneOf ?? []) {
+        const name = branch.properties?.type?.const;
+        if (name && !branch.description) missing.push(name);
+      }
+      for (const value of Object.values(node)) walk(value);
+    };
+
+    walk(json);
+    assert.deepEqual(missing, [], `undescribed: ${missing.join(', ')}`);
   });
 });

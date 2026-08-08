@@ -238,7 +238,7 @@ option, and the names it generates are machine-made (`__schema0`…).
 So the 16 KB figure is not a ceiling that better factoring would lower — it is what this schema costs
 through the SDK, and each further node carrying inline content adds roughly another 1.7 KB. Worth
 knowing before anyone tries to optimise it, and worth re-measuring rather than assuming if the node
-list grows much beyond the current fourteen.
+list grows much beyond the current fifteen.
 
 ## Limits
 
