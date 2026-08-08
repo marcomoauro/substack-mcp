@@ -161,7 +161,12 @@ describe('createDraftPostHandler — body conversion', () => {
     assert.deepEqual(paragraphTexts(doc), ['First', 'Second']);
   });
 
-  test('a ProseMirror document given as JSON is passed through untouched', async () => {
+  // Was a characterization test pinning *unvalidated* passthrough: anything carrying type: 'doc' went
+  // to Substack as-is, so a wrong node name created a draft with its content silently mangled. It is
+  // validated now against the same schema set_post_body publishes, without publishing it here — so the
+  // protection costs nothing and this was the last route into the server that accepted a body
+  // unchecked. Changed together with the source, as CLAUDE.md requires.
+  test('a valid ProseMirror document given as JSON is passed through untouched', async () => {
     const doc = {
       type: 'doc',
       content: [
@@ -171,6 +176,29 @@ describe('createDraftPostHandler — body conversion', () => {
     };
 
     assert.deepEqual(await sendAndDecode(JSON.stringify(doc)), doc);
+  });
+
+  test('an invalid document is rejected rather than forwarded', async () => {
+    const broken = JSON.stringify({type: 'doc', content: [{type: 'codeBlock', content: []}]});
+
+    await assert.rejects(() => createDraftPostHandler({...VALID_ARGS, body: broken}), z.ZodError);
+    assert.equal(msw.requests.length, 0, 'no request should have been made');
+  });
+
+  test('the rejection names the valid node types, so the caller can repair it', async () => {
+    const broken = JSON.stringify({type: 'doc', content: [{type: 'codeBlock', content: []}]});
+    const error = await createDraftPostHandler({...VALID_ARGS, body: broken}).catch(e => e);
+
+    const message = error.issues.map(i => i.message).join(' ');
+    assert.match(message, /Invalid discriminator value/);
+    assert.match(message, /'highlighted_code_block'/);
+  });
+
+  test('records the invalid document before rethrowing', async () => {
+    const broken = JSON.stringify({type: 'doc', content: [{type: 'codeBlock', content: []}]});
+    const logs = await captureLogs(() => createDraftPostHandler({...VALID_ARGS, body: broken}).catch(() => {}));
+
+    assert.ok(logs.some(line => line.msg === 'draft.body.invalid_document'), logs.map(l => l.msg).join(', '));
   });
 
   test('valid JSON that is not a document is treated as text', async () => {

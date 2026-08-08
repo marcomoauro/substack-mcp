@@ -1,6 +1,7 @@
 import {z} from "zod";
 import SubstackApi from "../api/substack/SubstackApi.js";
 import SubstackPost from "../api/substack/SubstackPost.js";
+import {postBodySchema} from "../api/substack/document.js";
 import {logger} from "../logger.js";
 
 
@@ -22,7 +23,7 @@ export const createDraftPostSchema = z.strictObject({
   body: z
     .string()
     .describe(
-      "The body of the post to be created. Either plain text (paragraphs separated by blank lines) or a JSON string of a Substack document, e.g. {\"type\":\"doc\",\"content\":[...]}."
+      "The body of the post. Plain text becomes one paragraph per line — Markdown is NOT interpreted, so `## Heading` would appear literally. A JSON string of a Substack document also works and is validated against the same schema set_post_body publishes; an unrecognised node name is an error rather than a mangled post. For structured content prefer set_post_body, where that schema is published and the node vocabulary is visible."
     ),
 });
 
@@ -30,14 +31,27 @@ const parseBody = (body) => {
   try {
     const doc = JSON.parse(body);
     if (doc && doc.type === 'doc') {
-      logger.debug('draft.body.parsed', {format: 'prosemirror', nodes: doc.content?.length ?? 0});
-      return doc;
+      // Validated, not forwarded. This branch used to be the one structured route into the server and
+      // the only one with no checks, so a wrong node name created a draft with its content mangled and
+      // said nothing. The schema is shared with set_post_body but deliberately not published here:
+      // validating costs nothing, publishing would cost another 20 KB on every session.
+      const validated = postBodySchema.parse(doc);
+      logger.debug('draft.body.parsed', {format: 'prosemirror', nodes: validated.content.length});
+      return validated;
     }
 
     // Valid JSON that is not a document: it goes through as text, and a model that believed
     // it was sending a document would have no other way to find out.
     logger.debug('draft.body.json_is_not_a_document', {parsed: doc});
   } catch (error) {
+    // Two different failures land here now, and confusing them is the trap: a ZodError means it *was*
+    // a document and a bad one, which must reach the caller. Anything else is JSON.parse failing,
+    // which only means the body is prose. Treating a ZodError as prose would publish the broken
+    // document as literal JSON text.
+    if (error instanceof z.ZodError) {
+      logger.error('draft.body.invalid_document', {issues: error.issues});
+      throw error;
+    }
     // not JSON, treat as plain text
   }
 
