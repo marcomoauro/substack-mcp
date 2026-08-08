@@ -1,7 +1,7 @@
 import {test, describe, before, after} from 'node:test';
 import assert from 'node:assert/strict';
 import {z} from 'zod';
-import {postBodySchema} from './document.js';
+import {postBodySchema, summarizeNodes} from './document.js';
 import {setTestEnv} from '../../../test/helpers/env.js';
 
 // setTestEnv is called even though this module reads no env var of its own: CLAUDE.md requires it
@@ -341,5 +341,127 @@ describe('postBodySchema — images, buttons and opaque nodes', () => {
 
     assert.match(message, /Invalid discriminator value/);
     assert.match(message, /'captionedImage'/);
+  });
+});
+
+describe('summarizeNodes', () => {
+  test('counts the node types in a flat document', () => {
+    const document = {type: 'doc', content: [
+      {type: 'paragraph', content: [text('a')]},
+      {type: 'paragraph', content: [text('b')]},
+      {type: 'horizontal_rule'},
+    ]};
+
+    assert.deepEqual(summarizeNodes(document), {paragraph: 2, horizontal_rule: 1});
+  });
+
+  test('counts nodes nested inside lists and quotes', () => {
+    const document = {type: 'doc', content: [{
+      type: 'bullet_list',
+      content: [{type: 'list_item', content: [{type: 'paragraph', content: [text('x')]}]}],
+    }]};
+
+    assert.deepEqual(summarizeNodes(document), {bullet_list: 1, list_item: 1, paragraph: 1});
+  });
+
+  // `text` is excluded on purpose: a tally dominated by hundreds of text runs buries the one number
+  // a caller is looking for, which is whether the paywall and the button are there.
+  test('does not count text or the doc itself', () => {
+    const summary = summarizeNodes({type: 'doc', content: [{type: 'paragraph', content: [text('a'), text('b')]}]});
+
+    assert.deepEqual(summary, {paragraph: 1});
+  });
+
+  test('counts a paywall so a caller can confirm it landed', () => {
+    const summary = summarizeNodes({type: 'doc', content: [{type: 'paywall'}]});
+
+    assert.deepEqual(summary, {paywall: 1});
+  });
+
+  test('returns an empty object for an empty document', () => {
+    assert.deepEqual(summarizeNodes({type: 'doc', content: []}), {});
+  });
+});
+
+// Shaped like a real published post rather than like something a writer would compose: every
+// paragraph and heading carries attrs: {textAlign: null}, and the nodes below appear in the live
+// archive — digestPostEmbed in 59 of 60 sampled posts. If this stops validating, the round trip this
+// contract exists to allow is broken, and no schema-first test would notice.
+const REAL_POST_SHAPE = {
+  type: 'doc',
+  content: [
+    {type: 'digestPostEmbed', attrs: {id: 210189950, publication_id: 2150088}},
+    {type: 'heading', attrs: {textAlign: null, level: 2}, content: [{type: 'text', text: 'A section'}]},
+    {type: 'paragraph', attrs: {textAlign: null}, content: [
+      {type: 'text', text: 'Prose with '},
+      {type: 'text', marks: [{type: 'strong'}], text: 'weight'},
+      {type: 'text', text: ' and a '},
+      {type: 'text', marks: [{type: 'link', attrs: {href: 'https://example.com', target: '_blank', rel: 'noopener noreferrer nofollow', class: null}}], text: 'link'},
+      {type: 'text', text: '.'},
+    ]},
+    {type: 'captionedImage', content: [
+      {type: 'image2', attrs: {src: 'https://substackcdn.com/image/fetch/x.png', srcNoWatermark: null, fullscreen: false, imageSize: 'normal', height: 819, width: 1456, resizeWidth: 728, bytes: null, alt: null, title: null, type: null, href: null, belowTheFold: false, topImage: false, internalRedirect: null, isProcessing: false, align: null, offset: false}},
+      {type: 'caption', content: [{type: 'text', text: 'A caption'}]},
+    ]},
+    {type: 'button', attrs: {url: '%%share_url%%', text: 'Share', action: null, class: 'button-wrapper'}},
+    {type: 'horizontal_rule'},
+    {type: 'code_block', content: [{type: 'text', text: 'legacy snippet'}]},
+    {type: 'substack_mentions', attrs: {publicationId: 2073698}},
+  ],
+};
+
+// The structural shapes a model actually produced when handed the published schema, kept so a later
+// tightening cannot quietly start rejecting documents that were known to work.
+const MODEL_AUTHORED_SHAPE = {
+  type: 'doc',
+  content: [
+    {type: 'ordered_list', attrs: {start: 3}, content: [
+      {type: 'list_item', content: [{type: 'paragraph', content: [{type: 'text', text: 'three'}]}]},
+    ]},
+    {type: 'bullet_list', content: [
+      {type: 'list_item', content: [
+        {type: 'paragraph', content: [{type: 'text', text: 'context'}]},
+        {type: 'bullet_list', content: [
+          {type: 'list_item', content: [{type: 'paragraph', content: [{type: 'text', text: 'nested'}]}]},
+        ]},
+      ]},
+      {type: 'list_item', content: [{type: 'paragraph', content: [
+        {type: 'text', marks: [{type: 'link', attrs: {href: 'https://example.com/fixed'}}], text: 'a link in a list item'},
+      ]}]},
+    ]},
+    {type: 'blockquote', content: [
+      {type: 'bullet_list', content: [
+        {type: 'list_item', content: [{type: 'paragraph', content: [{type: 'text', text: 'quoted item'}]}]},
+      ]},
+    ]},
+    {type: 'highlighted_code_block', attrs: {language: 'bash'}, content: [{type: 'text', text: 'set -euo pipefail'}]},
+  ],
+};
+
+describe('postBodySchema — real documents', () => {
+  test('accepts a document shaped like a real published post', () => {
+    const result = parse(REAL_POST_SHAPE);
+
+    assert.equal(result.success, true, result.success ? '' : JSON.stringify(result.error?.issues));
+  });
+
+  test('preserves the opaque archive nodes exactly', () => {
+    const result = parse(REAL_POST_SHAPE);
+
+    assert.deepEqual(result.data.content[0], REAL_POST_SHAPE.content[0]);
+    assert.deepEqual(result.data.content.at(-1), REAL_POST_SHAPE.content.at(-1));
+  });
+
+  test('tallies a real-shaped post without drowning in text nodes', () => {
+    assert.deepEqual(summarizeNodes(REAL_POST_SHAPE), {
+      digestPostEmbed: 1, heading: 1, paragraph: 1, captionedImage: 1, image2: 1,
+      caption: 1, button: 1, horizontal_rule: 1, code_block: 1, substack_mentions: 1,
+    });
+  });
+
+  test('accepts the structures a model produced from the published schema', () => {
+    const result = parse(MODEL_AUTHORED_SHAPE);
+
+    assert.equal(result.success, true, result.success ? '' : JSON.stringify(result.error?.issues));
   });
 });

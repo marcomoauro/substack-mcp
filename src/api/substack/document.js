@@ -177,3 +177,29 @@ export const postBodySchema = z.strictObject({
     (document) => document.content.filter((node) => node.type === 'paywall').length <= 1,
     {message: 'A document may contain at most one paywall node.', path: ['content']}
   );
+
+/**
+ * Counts the nodes in a document by type, so a caller can confirm that what it asked for landed.
+ *
+ * Validation cannot do this job: a document with no paywall is exactly as valid as one with a
+ * paywall, so legality has no opinion about an omission. This was measured — a model asked for a
+ * paywall through a Markdown contract omitted it, produced valid Markdown, and the document it
+ * rendered to passes this very schema. `text` and `doc` are left out because a tally dominated by
+ * text runs buries the numbers actually being looked for.
+ */
+export const summarizeNodes = (document) => {
+  const counts = {};
+
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return;
+
+    if (typeof node.type === 'string' && node.type !== 'text' && node.type !== 'doc') {
+      counts[node.type] = (counts[node.type] ?? 0) + 1;
+    }
+
+    if (Array.isArray(node.content)) node.content.forEach(walk);
+  };
+
+  walk(document);
+  return counts;
+};
