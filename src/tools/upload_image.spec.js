@@ -4,6 +4,7 @@ import {http, HttpResponse} from 'msw';
 import {uploadImageHandler, uploadImageSchema, MAX_IMAGE_BYTES, isPrivateAddress} from './upload_image.js';
 import {createMswServer, IMAGE_URL, IMAGE_UPLOAD_RESPONSE} from '../../test/helpers/msw-server.js';
 import {setTestEnv} from '../../test/helpers/env.js';
+import {captureLogs} from '../../test/helpers/capture-logs.js';
 
 const msw = createMswServer();
 let restoreEnv;
@@ -137,5 +138,25 @@ describe('uploadImageHandler — size cap', () => {
     msw.server.use(sourceHandler({body: atLimit, type: 'image/png'}));
     const result = await run({url: SOURCE});
     assert.equal(result.url, IMAGE_UPLOAD_RESPONSE.url);
+  });
+});
+
+describe('uploadImageHandler — logging', () => {
+  test('logs intent before the request and never logs the data URI payload', async () => {
+    const body = Buffer.alloc(5000, 0xab);
+    const payload = body.toString('base64');
+    msw.server.use(sourceHandler({body, type: 'image/png'}));
+
+    // captureLogs returns the parsed log lines directly as an array, at debug level — where the
+    // API layer logs the full request body, so this proves the data URI is elided end to end.
+    const logs = await captureLogs(() => run({url: SOURCE}));
+    const events = logs.map((l) => l.msg);
+
+    assert.ok(events.includes('upload_image.fetching'));
+    assert.ok(events.includes('upload_image.uploading'));
+    // The base64 payload must never appear in any log line — not the tool's, not the API's.
+    assert.equal(JSON.stringify(logs).includes(payload), false);
+    // But the request line still exists (truncated), proving logging was elided, not dropped.
+    assert.ok(logs.some((l) => l.msg === 'substack.request'));
   });
 });

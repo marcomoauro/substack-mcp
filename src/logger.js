@@ -20,6 +20,26 @@ const SECRET_KEY = /token|cookie|password|secret|auth|session|^sid$/i;
 
 const REDACTED = '***';
 
+// A base64 data URI is an opaque blob, useless in a log and ruinous to its volume: a single
+// image upload carries its body through `substack.request` at info, which for a real photo is
+// hundreds of KB of base64 on one line. Unlike a post body — which is prose and deliberately
+// logged in full — the payload here has no diagnostic value, so it is elided while the prefix
+// (mime type, that it is base64) and the elided length are kept. Matched on the value, since a
+// data URI can sit under any key (`image`, `src`, …).
+const DATA_URI_PREFIX = /^data:[^,]*;base64,/i;
+
+function truncateDataUri(value) {
+  const match = value.match(DATA_URI_PREFIX);
+  if (!match) {
+    return value;
+  }
+  const payload = value.length - match[0].length;
+  if (payload <= 32) {
+    return value;
+  }
+  return `${match[0]}…(${payload} base64 chars omitted)`;
+}
+
 // Read at call time, not at import: SUBSTACK_MCP_LOG_LEVEL may be set after this module is
 // imported (tests do exactly that), and no module here may read the environment at import
 // time. An unknown value falls back to the default rather than silencing the server.
@@ -56,6 +76,10 @@ function redact(value, seen = new WeakSet()) {
 
     seen.delete(value);
     return expanded;
+  }
+
+  if (typeof value === 'string') {
+    return truncateDataUri(value);
   }
 
   if (value === null || typeof value !== 'object') {
