@@ -1,5 +1,6 @@
 import {z} from "zod";
 import SubstackApi from "../api/substack/SubstackApi.js";
+import {fetchImageAsDataUri, defaultLookup, isSubstackHosted} from "../api/substack/image.js";
 import {logger} from "../logger.js";
 
 // The API takes a partial body and leaves absent keys alone, so every field here is optional and
@@ -85,7 +86,11 @@ export const updateDraftSchema = z.strictObject({
     ),
 });
 
-export const updateDraftHandler = async (args) => {
+// Derived, never a hand-written list: the message names every settable field, and at eleven of them
+// a literal list rots the first time one is added.
+const SETTABLE_FIELDS = Object.keys(updateDraftSchema.shape).filter((name) => name !== 'draft_id');
+
+export const updateDraftHandler = async (args, {lookup = defaultLookup, fetchImpl = fetch} = {}) => {
   logger.debug('update_draft.start', {args});
 
   let validatedArgs;
@@ -105,7 +110,7 @@ export const updateDraftHandler = async (args) => {
   if (Object.keys(fields).length === 0) {
     logger.error('update_draft.no_fields', {draft_id});
     throw new Error(
-      'No fields to update. Provide at least one of: draft_title, draft_subtitle, audience.'
+      `No fields to update. Provide at least one of: ${SETTABLE_FIELDS.join(', ')}.`
     );
   }
 
@@ -114,12 +119,36 @@ export const updateDraftHandler = async (args) => {
     auth_token: process.env.SUBSTACK_SESSION_TOKEN,
   });
 
+  // Resolved BEFORE the PUT, and a failure here throws before the draft is touched: Substack
+  // server-fetches only its own bucket, so an external url written straight to cover_image is
+  // stored with a 200 and never renders. cover_image has no server-side validation at all — the
+  // literal string "not-a-url-at-all" was accepted — so this is the only guard there is.
+  let cover_rehosted_from = null;
+
+  if (fields.cover_image !== undefined && !isSubstackHosted(fields.cover_image)) {
+    const source = fields.cover_image;
+
+    logger.info('update_draft.cover_image.fetching', {draft_id, url: source});
+    const {image, contentType, bytes} = await fetchImageAsDataUri(source, {lookup, fetchImpl});
+
+    // The data URI is deliberately not logged: hundreds of KB of base64 would bury the session.
+    logger.info('update_draft.cover_image.uploading', {draft_id, content_type: contentType, bytes});
+    // post_id is left null: `POST /api/v1/image` accepts a postId, but its effect is unconfirmed and
+    // it was never measured against a draft.
+    const uploaded = await substack_api.uploadImage({image, post_id: null});
+
+    fields.cover_image = uploaded.url;
+    cover_rehosted_from = source;
+    logger.info('update_draft.cover_image.rehosted', {draft_id, from: source, to: uploaded.url});
+  }
+
   const draft = await substack_api.updateDraft(draft_id, fields);
 
   logger.info('update_draft.done', {
     draft_id,
     updated_fields: Object.keys(fields),
     draft_title: draft?.draft_title ?? null,
+    cover_image_rehosted_from: cover_rehosted_from,
   });
 
   return {
@@ -129,5 +158,9 @@ export const updateDraftHandler = async (args) => {
     draft_subtitle: draft?.draft_subtitle ?? null,
     audience: draft?.audience ?? null,
     is_published: draft?.is_published ?? null,
+    // The value that landed, not the one that was asked for: after a re-host they differ, and the
+    // caller has no other way to learn the new url.
+    cover_image: fields.cover_image ?? draft?.cover_image ?? null,
+    cover_image_rehosted_from: cover_rehosted_from,
   };
 };

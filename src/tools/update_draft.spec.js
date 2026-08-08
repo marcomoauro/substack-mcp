@@ -1,9 +1,9 @@
 import {test, describe, before, after, afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {z} from 'zod';
-import {HttpResponse} from 'msw';
+import {http, HttpResponse} from 'msw';
 import {updateDraftHandler, updateDraftSchema} from './update_draft.js';
-import {createMswServer, DRAFTS_URL} from '../../test/helpers/msw-server.js';
+import {createMswServer, DRAFTS_URL, IMAGE_UPLOAD_RESPONSE} from '../../test/helpers/msw-server.js';
 import {setTestEnv} from '../../test/helpers/env.js';
 
 const msw = createMswServer();
@@ -18,6 +18,16 @@ after(() => {
   msw.stop();
   restoreEnv();
 });
+
+// A public address for the source host, so the SSRF guard passes without touching real DNS.
+const publicLookup = async () => [{address: '93.184.216.34', family: 4}];
+
+// A source image served by MSW, and the handler that serves it.
+const SOURCE = 'https://images.example.com/cover.jpg';
+const sourceHandler = ({body = Buffer.from([0xff, 0xd8, 0xff, 0xd9]), type = 'image/jpeg'} = {}) =>
+  http.get(SOURCE, () => new HttpResponse(body, {status: 200, headers: {'Content-Type': type}}));
+
+const run = (args, deps = {}) => updateDraftHandler(args, {lookup: publicLookup, ...deps});
 
 describe('updateDraftSchema', () => {
   test('requires a draft_id', () => {
@@ -185,5 +195,93 @@ describe('updateDraftHandler', () => {
       () => updateDraftHandler({draft_id: 1, draft_title: 'x'}),
       /SubstackAPIException: 404/
     );
+  });
+});
+
+describe('updateDraftHandler — cover_image', () => {
+  const HOSTED = 'https://substack-post-media.s3.amazonaws.com/public/images/existing_1500x1000.jpeg';
+
+  test('forwards a cover already on a Substack host without uploading it', async () => {
+    await run({draft_id: 1, cover_image: HOSTED});
+
+    assert.equal(
+      msw.requests.filter((r) => r.url.endsWith('/api/v1/image')).length,
+      0,
+      're-hosting an asset Substack already serves would upload a duplicate'
+    );
+    assert.deepEqual(msw.requests.at(-1).body, {cover_image: HOSTED});
+  });
+
+  test('re-hosts an external cover, then PUTs the returned S3 url', async () => {
+    msw.server.use(sourceHandler());
+
+    await run({draft_id: 1, cover_image: SOURCE});
+
+    const upload = msw.requests.find((r) => r.url.endsWith('/api/v1/image'));
+    assert.ok(upload, 'an external url must be re-hosted: Substack server-fetches only its own bucket');
+    assert.match(upload.body.image, /^data:image\/jpeg;base64,/);
+
+    const put = msw.requests.at(-1);
+    assert.equal(put.method, 'PUT');
+    assert.deepEqual(put.body, {cover_image: IMAGE_UPLOAD_RESPONSE.url});
+  });
+
+  test('uploads before it PUTs, so the draft never points at an un-hosted url', async () => {
+    msw.server.use(sourceHandler());
+
+    await run({draft_id: 1, cover_image: SOURCE});
+
+    const uploadIndex = msw.requests.findIndex((r) => r.url.endsWith('/api/v1/image'));
+    const putIndex = msw.requests.findIndex((r) => r.method === 'PUT');
+    assert.ok(uploadIndex < putIndex, `upload (${uploadIndex}) must precede PUT (${putIndex})`);
+  });
+
+  test('reports the url that actually landed, and where it came from', async () => {
+    msw.server.use(sourceHandler());
+
+    const result = await run({draft_id: 1, cover_image: SOURCE});
+
+    // Without this the caller cannot learn the url its cover now points at — the same reason
+    // set_post_body returns a node tally rather than 'OK'.
+    assert.equal(result.cover_image, IMAGE_UPLOAD_RESPONSE.url);
+    assert.equal(result.cover_image_rehosted_from, SOURCE);
+  });
+
+  test('leaves cover_image_rehosted_from null when nothing was re-hosted', async () => {
+    const result = await run({draft_id: 1, cover_image: HOSTED});
+
+    assert.equal(result.cover_image, HOSTED);
+    assert.equal(result.cover_image_rehosted_from, null);
+  });
+
+  // The reason the re-host runs before the PUT: a failure here must not leave the other fields
+  // written while the cover silently kept its old value.
+  test('makes no PUT at all when the re-host fails', async () => {
+    msw.server.use(
+      http.get(SOURCE, () => new HttpResponse('nope', {status: 500, headers: {'Content-Type': 'text/plain'}}))
+    );
+
+    await assert.rejects(
+      () => run({draft_id: 1, draft_title: 'T', cover_image: SOURCE}),
+      /source responded 500/
+    );
+
+    assert.equal(
+      msw.requests.filter((r) => r.method === 'PUT').length,
+      0,
+      'a failed re-host must abort before the draft is touched'
+    );
+  });
+
+  test('refuses a private address for the cover source', async () => {
+    await assert.rejects(
+      () => updateDraftHandler(
+        {draft_id: 1, cover_image: 'http://169.254.169.254/latest/meta-data/'},
+        {lookup: async () => [{address: '169.254.169.254', family: 4}]}
+      ),
+      /private\/loopback/
+    );
+
+    assert.equal(msw.requests.filter((r) => r.method === 'PUT').length, 0);
   });
 });
