@@ -34,7 +34,7 @@ const parseBody = (body) => {
       // Validated, not forwarded. This branch used to be the one structured route into the server and
       // the only one with no checks, so a wrong node name created a draft with its content mangled and
       // said nothing. The schema is shared with set_post_body but deliberately not published here:
-      // validating costs nothing, publishing would cost another 20 KB on every session.
+      // validating costs nothing, publishing would cost another ~21 KB on every session.
       const validated = postBodySchema.parse(doc);
       logger.debug('draft.body.parsed', {format: 'prosemirror', nodes: validated.content.length});
       return validated;

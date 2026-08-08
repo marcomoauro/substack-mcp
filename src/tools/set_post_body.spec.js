@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {z} from 'zod';
 import {HttpResponse} from 'msw';
 import {setPostBodyHandler, setPostBodySchema} from './set_post_body.js';
-import {createMswServer, DRAFT_RESPONSE} from '../../test/helpers/msw-server.js';
+import {createMswServer} from '../../test/helpers/msw-server.js';
 import {setTestEnv} from '../../test/helpers/env.js';
 import {captureLogs} from '../../test/helpers/capture-logs.js';
 
@@ -111,6 +111,17 @@ describe('setPostBodyHandler', () => {
     assert.deepEqual(done.nodes, {paragraph: 1, paywall: 1, heading: 1});
   });
 
+  // Renaming a log line is the cheapest mutation for a logging assertion, so every line this handler
+  // writes needs one — otherwise deleting it leaves the suite green and the session becomes
+  // undebuggable from the log alone, which is the whole point of writing it.
+  test('records the arguments it received', async () => {
+    const logs = await captureLogs(() => setPostBodyHandler(VALID_ARGS));
+    const start = logs.find(line => line.msg === 'set_post_body.start');
+
+    assert.ok(start, `expected set_post_body.start in ${logs.map(l => l.msg).join(', ')}`);
+    assert.deepEqual(start.args, VALID_ARGS);
+  });
+
   // The write replaces a body outright and the previous one is not recoverable from anywhere in this
   // server, so the intent line has to precede the request rather than only report its outcome.
   test('logs the intent before the response comes back', async () => {
@@ -128,17 +139,31 @@ describe('setPostBodyHandler', () => {
     assert.ok(logs.some(line => line.msg === 'set_post_body.args.invalid'));
   });
 
-  test('reads the env vars at call time, not at module import', async () => {
-    assert.ok(DRAFT_RESPONSE, 'the msw helper should expose a draft response');
+  test('authenticates with the token taken from the env vars', async () => {
+    await setPostBodyHandler(VALID_ARGS);
 
-    const previous = process.env.SUBSTACK_PUBLICATION_URL;
-    process.env.SUBSTACK_PUBLICATION_URL = 'https://elsewhere.substack.com';
+    assert.equal(
+      msw.requests.at(-1).headers.cookie,
+      'substack.sid=test-session-token; connect.sid=test-session-token;'
+    );
+  });
+
+  // Asserts on the cookie rather than on the publication host, because swapping the host would send
+  // the request somewhere MSW has no handler for and `onUnhandledRequest: 'error'` would fail the test
+  // for the wrong reason. The token is the observable consequence available without leaving the mock.
+  test('reads the env vars at call time, not at module import', async () => {
+    const previous = process.env.SUBSTACK_SESSION_TOKEN;
+    process.env.SUBSTACK_SESSION_TOKEN = 'rotated-at-call-time';
 
     try {
-      await setPostBodyHandler(VALID_ARGS).catch(() => {});
-      assert.match(msw.requests.at(-1)?.url ?? 'https://elsewhere.substack.com', /elsewhere|drafts/);
+      await setPostBodyHandler(VALID_ARGS);
+
+      assert.equal(
+        msw.requests.at(-1).headers.cookie,
+        'substack.sid=rotated-at-call-time; connect.sid=rotated-at-call-time;'
+      );
     } finally {
-      process.env.SUBSTACK_PUBLICATION_URL = previous;
+      process.env.SUBSTACK_SESSION_TOKEN = previous;
     }
   });
 });

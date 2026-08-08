@@ -295,7 +295,7 @@ line is the only record that it happened.
 **The post body has a contract, and `set_post_body` is where it lives.** `src/api/substack/document.js`
 models the ProseMirror document in zod — a discriminated union over the fifteen node types observed in
 the live archive, published as that tool's JSON Schema so a calling model reads the vocabulary from
-`tools/list` instead of guessing. It is the only tool that publishes it: at 20 KB, carrying it on
+`tools/list` instead of guessing. It is the only tool that publishes it: at roughly 21 KB, carrying it on
 `create_draft_post` and `update_draft` too would more than double a `tools/list` that is 56 KB with one
 copy. `create_draft_post`'s JSON branch runs the **same validator without publishing it**, which cost
 nothing and closed the last route that accepted a body unchecked. Six measured facts shape it:

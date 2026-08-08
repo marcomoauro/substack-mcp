@@ -416,3 +416,41 @@ describe('MCP server — set_post_body over the protocol', () => {
     }
   });
 });
+
+describe('MCP server — the cost of the published document schema', () => {
+  // The document schema is the largest thing this server publishes, and the reason it lives on
+  // set_post_body alone. Nothing else stops someone adding `body: postBodySchema` to a second tool,
+  // where it would be paid again by every session — including the ones that never write a post. This
+  // test is that stop: it asserts the node vocabulary appears in exactly one tool's inputSchema.
+  test('publishes the document vocabulary on exactly one tool', async () => {
+    const {client, close} = await connectMcpClient();
+
+    try {
+      const {tools} = await client.listTools();
+      const carrying = tools
+        .filter(tool => JSON.stringify(tool.inputSchema).includes('"highlighted_code_block"'))
+        .map(tool => tool.name);
+
+      assert.deepEqual(carrying, ['set_post_body']);
+    } finally {
+      await close();
+    }
+  });
+
+  // Not an exact byte count — that would rot on every node added. A ceiling, so a change that
+  // doubles what every session downloads fails here instead of going unnoticed.
+  test('keeps the published schema under 32 KB', async () => {
+    const {client, close} = await connectMcpClient();
+
+    try {
+      const {tools} = await client.listTools();
+      const schema = tools.find(tool => tool.name === 'set_post_body').inputSchema;
+      const bytes = JSON.stringify(schema).length;
+
+      assert.ok(bytes < 32768, `the published schema is ${bytes} bytes, which is over the 32 KB ceiling`);
+      assert.ok(bytes > 8192, `the published schema is only ${bytes} bytes — did the node union shrink?`);
+    } finally {
+      await close();
+    }
+  });
+});

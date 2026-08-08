@@ -9,9 +9,12 @@ import {logger} from "../logger.js";
 // then being told `body` is missing.
 //
 // This is the one tool that publishes the document schema. Keeping it here rather than on
-// create_draft_post and update_draft both is deliberate: the schema measures 20,342 bytes, and paying
-// it twice would grow tools/list by over 100% for every session, including those that never write a
-// post. create_draft_post shares the same validator without publishing it, so nothing is unguarded.
+// create_draft_post and update_draft both is deliberate: the schema publishes at roughly 21 KB against
+// a tools/list that is about 35 KB without it, so paying for it twice would more than double what every
+// session downloads, including the sessions that never write a post. The figure is deliberately not
+// exact — it grows with every node added, and `src/server.spec.js` measures the real one — but the
+// order of magnitude is what the decision rests on. create_draft_post shares this validator without
+// publishing it, so nothing is left unguarded.
 export const setPostBodySchema = z.strictObject({
   draft_id: z
     .number()

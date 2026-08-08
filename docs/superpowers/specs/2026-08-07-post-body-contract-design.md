@@ -90,7 +90,8 @@ so all of them get modelled and nothing has to be waved through.
 carried by one tool instead of two — publishing it on both `create_draft_post` and `update_draft` would
 double its cost for every session, including those that never write a post.
 
-**The finished schema publishes at 20,342 bytes**, measured on the implemented module rather than on the
+**The finished schema publishes at roughly 21 KB** (20,342 bytes when this was written, 21,094 after the
+`order` attribute was added later on the branch), measured on the implemented module rather than on the
 prototype that suggested 16 KB: the extra four node types and the descriptions on every branch account
 for the difference. Against a `tools/list` of 34.7 KB before this work, one copy is a ~59% increase and
 two would have been ~117%.
