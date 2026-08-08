@@ -1558,7 +1558,9 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol
     timeout 5 node src/index.js 2>/dev/null | sed -n '2p' | wc -c
 ```
 
-Expected: roughly 50,000–52,000 bytes, up from 34,721. If it is materially larger, something is being published twice — check that `create_draft_post` did not gain the document schema.
+Expected: roughly 55,000 bytes, up from 34,721 — the document schema measures 20,342 bytes on its own
+once every node carries a description. If it is closer to 75,000, something is being published twice:
+check that `create_draft_post` did not gain the document schema.
 
 - [ ] **Step 5: Commit**
 

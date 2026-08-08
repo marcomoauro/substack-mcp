@@ -57,6 +57,7 @@ mutation-tested first and all six deliberate corruptions turned a check red.
 - **The document validated 5/5 on the first attempt, zero repair rounds.** A 16 KB published schema
   is enough for a model to get nested lists, `ordered_list` with `start: 3`, a link inside a list
   item, a blockquote containing a list, a paywall, a button and a captioned image right first time.
+  (That trial ran against a 16 KB prototype; the shipped schema is 20.3 KB, richer in descriptions.)
 - **Where both can express a construct the result is semantically identical** — `em` on exactly
   "not", `code` on exactly `API_KEY`, `strong` on "Boring", the link on the intended words, all three
   code blocks with matching languages and lengths, and a `${API_KEY:?…}` shell guard intact.
@@ -85,10 +86,14 @@ so all of them get modelled and nothing has to be waved through.
 
 ### A dedicated tool, so the schema is published once
 
-`set_post_body(draft_id, body)`. Creation and body-writing become separate verbs, and the 16 KB
-schema is carried by one tool instead of two — publishing it on both `create_draft_post` and
-`update_draft` would add ~32 KB to a `tools/list` that is 34.7 KB today, a 92% increase paid by every
-session including those that never write a post.
+`set_post_body(draft_id, body)`. Creation and body-writing become separate verbs, and the schema is
+carried by one tool instead of two — publishing it on both `create_draft_post` and `update_draft` would
+double its cost for every session, including those that never write a post.
+
+**The finished schema publishes at 20,342 bytes**, measured on the implemented module rather than on the
+prototype that suggested 16 KB: the extra four node types and the descriptions on every branch account
+for the difference. Against a `tools/list` of 34.7 KB before this work, one copy is a ~59% increase and
+two would have been ~117%.
 
 It PUTs `draft_body` to `PUT /api/v1/drafts/:id`, verified to accept it and to store it **verbatim**:
 no normalisation, no filled-in defaults. The server is a dumb store and the editor is the only
