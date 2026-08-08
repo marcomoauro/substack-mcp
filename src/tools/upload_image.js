@@ -3,8 +3,9 @@ import dns from "node:dns";
 import SubstackApi from "../api/substack/SubstackApi.js";
 import {logger} from "../logger.js";
 
-// Our own memory guard, NOT Substack's limit (its MAX_FILE_SIZE could not be read from the minified
-// bundle). The downloaded buffer plus its ~1.37x base64 string sit in RAM; 10 MB caps that.
+// Caps what we hold and re-encode: an oversized body is still buffered once by fetch, but we
+// reject it before the ~1.37x base64 copy and the upload. NOT Substack's own limit (its
+// MAX_FILE_SIZE could not be read from the minified bundle).
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 const HEIC_TYPES = new Set(['image/heic', 'image/heif']);
@@ -44,18 +45,16 @@ export function isPrivateAddress(address, family) {
   if (a === '::1' || a === '::') return true;
   if (a.startsWith('fe8') || a.startsWith('fe9') || a.startsWith('fea') || a.startsWith('feb')) return true; // fe80::/10
   if (a.startsWith('fc') || a.startsWith('fd')) return true; // fc00::/7 unique-local
-  const mapped = a.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/); // IPv4-mapped
+  // IPv4-mapped IPv6 (::ffff:x.x.x.x) is unwrapped; other embeddings (6to4/Teredo/NAT64) are not —
+  // accepted residual risk.
+  const mapped = a.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
   if (mapped) return isPrivateAddress(mapped[1], 4);
   return false;
 }
 
 async function assertPublicUrl(rawUrl, lookup) {
-  let url;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw new Error(`upload_image: not a valid URL: ${rawUrl}`);
-  }
+  // The schema's .url() already guaranteed this parses.
+  const url = new URL(rawUrl);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new Error(`upload_image: only http and https URLs are allowed, got ${url.protocol}`);
   }
@@ -68,13 +67,40 @@ async function assertPublicUrl(rawUrl, lookup) {
   return url;
 }
 
-export const uploadImageHandler = async (args, {lookup = defaultLookup, fetchImpl = fetch} = {}) => {
-  const {url, post_id} = uploadImageSchema.parse(args);
+// `fetch`'s default `redirect: 'follow'` would contact a redirect target before we ever see its
+// host, which turns `assertPublicUrl` into a check on the ORIGINAL host only — a public host that
+// 3xx-redirects to http://169.254.169.254/ (or any private address) bypasses the guard entirely.
+// So redirects are followed manually here, validating each hop's host before it is contacted.
+async function fetchGuarded(rawUrl, lookup, fetchImpl, maxRedirects = 3) {
+  let target = rawUrl;
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    await assertPublicUrl(target, lookup); // validate before every request, including each redirect
+    const response = await fetchImpl(target, {redirect: 'manual'});
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) throw new Error(`upload_image: redirect with no Location header from ${target}`);
+      target = new URL(location, target).toString(); // resolve relative redirects against current URL
+      continue;
+    }
+    return response;
+  }
+  throw new Error(`upload_image: too many redirects (> ${maxRedirects})`);
+}
 
-  await assertPublicUrl(url, lookup);
+export const uploadImageHandler = async (args, {lookup = defaultLookup, fetchImpl = fetch} = {}) => {
+  logger.debug('upload_image.start', {args});
+
+  let validatedArgs;
+  try {
+    validatedArgs = uploadImageSchema.parse(args);
+  } catch (error) {
+    logger.error('upload_image.args.invalid', {issues: error.issues ?? error.message});
+    throw error;
+  }
+  const {url, post_id} = validatedArgs;
 
   logger.info('upload_image.fetching', {url, post_id: post_id ?? null});
-  const response = await fetchImpl(url);
+  const response = await fetchGuarded(url, lookup, fetchImpl);
   if (!response.ok) {
     throw new Error(`upload_image: source responded ${response.status} ${response.statusText}`);
   }

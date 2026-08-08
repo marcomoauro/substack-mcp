@@ -4,7 +4,6 @@ import {http, HttpResponse} from 'msw';
 import {uploadImageHandler, uploadImageSchema, MAX_IMAGE_BYTES, isPrivateAddress} from './upload_image.js';
 import {createMswServer, IMAGE_URL, IMAGE_UPLOAD_RESPONSE} from '../../test/helpers/msw-server.js';
 import {setTestEnv} from '../../test/helpers/env.js';
-import {captureLogs} from '../../test/helpers/capture-logs.js';
 
 const msw = createMswServer();
 let restoreEnv;
@@ -55,5 +54,25 @@ describe('uploadImageHandler — happy path', () => {
     await run({url: SOURCE, post_id: 7});
     const upload = msw.requests.find((r) => r.url.endsWith('/api/v1/image'));
     assert.equal(upload.body.postId, 7);
+  });
+});
+
+describe('uploadImageHandler — redirect SSRF guard', () => {
+  test('rejects a redirect to a private address without uploading', async () => {
+    const REDIRECTOR = 'https://images.example.com/redirect.jpg';
+    const INTERNAL = 'http://metadata.internal/latest';
+    // First host resolves public, the redirect target resolves private.
+    const lookup = async (hostname) =>
+      hostname === 'metadata.internal'
+        ? [{address: '169.254.169.254', family: 4}]
+        : [{address: '93.184.216.34', family: 4}];
+    msw.server.use(
+      http.get(REDIRECTOR, () => new HttpResponse(null, {status: 302, headers: {Location: INTERNAL}}))
+    );
+    await assert.rejects(
+      uploadImageHandler({url: REDIRECTOR}, {lookup, fetchImpl: fetch}),
+      /private\/loopback/
+    );
+    assert.equal(msw.requests.find((r) => r.url.endsWith('/api/v1/image')), undefined);
   });
 });
