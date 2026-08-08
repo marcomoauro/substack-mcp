@@ -62,6 +62,7 @@ describe('MCP server — list_tools', () => {
     'list_subscriptions',
     'publish_draft',
     'restack_item',
+    'set_post_body',
     'update_draft',
   ];
 
