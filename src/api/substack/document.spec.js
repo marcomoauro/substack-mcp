@@ -273,3 +273,73 @@ describe('postBodySchema — code, rules and the paywall', () => {
     assert.match(result.error.issues.map(i => i.message).join(' '), /at most one paywall/i);
   });
 });
+
+describe('postBodySchema — images, buttons and opaque nodes', () => {
+  const image = {type: 'image2', attrs: {src: 'https://substackcdn.com/image/fetch/x.png', alt: 'A board'}};
+
+  test('accepts an image inside a captionedImage', () => {
+    assert.equal(parse(doc({type: 'captionedImage', content: [image]})).success, true);
+  });
+
+  test('accepts a caption after the image', () => {
+    const caption = {type: 'caption', content: [text('One task per alert.')]};
+
+    assert.equal(parse(doc({type: 'captionedImage', content: [image, caption]})).success, true);
+  });
+
+  test('rejects an image2 outside a captionedImage', () => {
+    assert.equal(parse(doc(image)).success, false);
+  });
+
+  test('rejects an image with no src', () => {
+    const bare = {type: 'image2', attrs: {alt: 'nothing'}};
+
+    assert.match(parse(doc({type: 'captionedImage', content: [bare]})).error.issues.map(i => i.path.join('.')).join(' '), /attrs/);
+  });
+
+  test('preserves the many attrs the editor writes on an image', () => {
+    const rich = {type: 'image2', attrs: {src: 'https://x.dev/a.png', width: 1456, height: 819, belowTheFold: false}};
+    const result = parse(doc({type: 'captionedImage', content: [rich]}));
+
+    assert.equal(result.data.content[0].content[0].attrs.width, 1456);
+  });
+
+  test('accepts a button', () => {
+    const button = {type: 'button', attrs: {url: '%%checkout_url%%', text: 'Subscribe'}};
+
+    assert.equal(parse(doc(button)).success, true);
+  });
+
+  test('rejects a button with no text', () => {
+    assert.equal(parse(doc({type: 'button', attrs: {url: '%%checkout_url%%'}})).success, false);
+  });
+
+  // These three appear in the live archive — digestPostEmbed in 59 of 60 sampled posts — and their
+  // internals were never read. Accepted whole so a read-modify-write round trip preserves them.
+  for (const type of ['digestPostEmbed', 'substack_mentions', 'directMessage']) {
+    test(`accepts ${type} and preserves what it carries`, () => {
+      const node = {type, attrs: {id: 7}, content: [{type: 'anything', nested: true}]};
+      const result = parse(doc(node));
+
+      assert.equal(result.success, true);
+      assert.deepEqual(result.data.content[0], node);
+    });
+  }
+
+  // In 33 of 40 sampled posts on the second publication. Its absence would have blocked the round
+  // trip on most of that archive — which is what a survey of only one publication had missed.
+  test('accepts a youtube embed', () => {
+    assert.equal(parse(doc({type: 'youtube2', attrs: {videoId: '0chZFIZLR_0'}})).success, true);
+  });
+
+  test('rejects a youtube embed with no videoId', () => {
+    assert.equal(parse(doc({type: 'youtube2', attrs: {}})).success, false);
+  });
+
+  test('rejects a node type outside the enumeration, naming the alternatives', () => {
+    const message = issues(doc({type: 'subscribeWidget', attrs: {}})).join(' ');
+
+    assert.match(message, /Invalid discriminator value/);
+    assert.match(message, /'captionedImage'/);
+  });
+});

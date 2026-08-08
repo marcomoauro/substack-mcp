@@ -117,11 +117,57 @@ const horizontalRuleNode = z.strictObject({type: z.literal('horizontal_rule')})
 const paywallNode = z.strictObject({type: z.literal('paywall')})
   .describe('Everything after this node is for paying subscribers only. At most one per document.');
 
+const captionedImageNode = z.strictObject({
+  type: z.literal('captionedImage'),
+  content: z.array(z.discriminatedUnion('type', [
+    z.strictObject({
+      type: z.literal('image2'),
+      attrs: looseAttrs.extend({
+        src: z.string().describe('Image URL. It must already be hosted by Substack — an external url is stored but does not render.'),
+        alt: z.string().nullable().optional(),
+      }),
+    }).describe('The image itself. Only valid inside a captionedImage.'),
+    z.strictObject({
+      type: z.literal('caption'),
+      content: inlineContent.optional(),
+    }).describe('The caption under an image. Only valid inside a captionedImage.'),
+  ])),
+}).describe('An image, optionally followed by a caption node.');
+
+const buttonNode = z.strictObject({
+  type: z.literal('button'),
+  attrs: looseAttrs.extend({
+    url: z.string().describe('Target, or a Substack placeholder: %%checkout_url%% to subscribe, %%share_url%% to share.'),
+    text: z.string().describe('The button label.'),
+  }),
+}).describe('A call-to-action button.');
+
+// Verified 2026-08-07 on the quickviewai publication, where it appears in 33 of 40 sampled posts:
+// exactly `{videoId}` and no content, identical in every occurrence. `SubstackPost.youtubeVideo()`
+// already builds this shape, so on this one node the existing builder was right.
+const youtubeNode = z.strictObject({
+  type: z.literal('youtube2'),
+  attrs: looseAttrs.extend({videoId: z.string().describe('The YouTube video id, not the watch URL.')}),
+}).describe('An embedded YouTube video.');
+
+// A node whose internals were never read. `looseObject` keeps everything it carries — including its
+// content — so a round trip preserves it exactly, while claiming no knowledge we do not have.
+const opaqueNode = (type, description) =>
+  z.looseObject({type: z.literal(type)}).describe(description);
+
+// Present in the live archive, internals never read. digestPostEmbed alone is in 59 of 60 sampled
+// posts, so these three are what make a read-modify-write round trip possible at all.
+const digestPostEmbedNode = opaqueNode('digestPostEmbed', 'An embedded post card. Substack inserts this itself; pass it back unchanged.');
+const substackMentionsNode = opaqueNode('substack_mentions', 'A mention of another publication or user.');
+const directMessageNode = opaqueNode('directMessage', 'A direct-message block.');
+
 export const postBodySchema = z.strictObject({
   type: z.literal('doc'),
   content: z.array(z.discriminatedUnion('type', [
     paragraphNode, headingNode, bulletListNode, orderedListNode, blockquoteNode,
     codeBlockNode, legacyCodeBlockNode, horizontalRuleNode, paywallNode,
+    captionedImageNode, buttonNode, youtubeNode,
+    digestPostEmbedNode, substackMentionsNode, directMessageNode,
   ])),
 })
   .describe('The post body as a Substack ProseMirror document.')
