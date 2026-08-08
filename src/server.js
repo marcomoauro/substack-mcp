@@ -99,9 +99,11 @@ export const tools = {
   },
   update_draft: {
     description:
-      "Change the title, subtitle or audience of an existing draft. The update is partial: only the " +
-      "fields you pass change, everything else — including the body — is left alone. Take the id " +
-      "from list_posts or create_draft_post.",
+      "Change an existing draft's title, subtitle or any of its Post settings: audience, who may " +
+      "comment, comment order, cover image, social preview title and description, SEO title and " +
+      "description, and URL slug. The update is partial: only the fields you pass change, everything " +
+      "else — including the body — is left alone. A cover_image not already hosted by Substack is " +
+      "downloaded and re-hosted first. Take the id from list_posts or create_draft_post.",
     schema: updateDraftSchema,
     handler: updateDraftHandler,
   },
