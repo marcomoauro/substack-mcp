@@ -281,11 +281,12 @@ against `main` again on 2026-08-07, after #18: five are zero-commit snapshots, `
 test this repo has in English *plus* the logging assertions), and `jcllobet`'s reader work went in
 with #18. Only `jefflee1990710` still holds anything, and it is one coherent area rather than a list:
 **account and publication settings** — `PUT /api/v1/publication` (`name`, `hero_text`, `copyright`,
-`email_from_name`, `logo_url`), `PUT substack.com/api/v1/user/profile` (`name`, `bio`, `photo_url`),
-and the `POST substack.com/api/v1/image` upload both depend on, since per the fork an external url is
-stored but does not render. That upload is also the only route to an image *inside* a post, which
-nothing here can do. All three are unverified writes from the fork that invented `share_automatically`,
-so none of it ships without a live check first; they are open by choice, not by oversight.
+`email_from_name`, `logo_url`) and `PUT substack.com/api/v1/user/profile` (`name`, `bio`, `photo_url`).
+Per the fork these store an external `logo_url`/`photo_url` that does not render, so they likely need a
+Substack-hosted asset first — which `upload_image` now produces (`POST /api/v1/image`, verified and
+shipped; see the image contract below). Both settings writes are still unverified writes from the fork
+that invented `share_automatically`, so neither ships without a live check first; they are open by
+choice, not by oversight.
 
 **Writes log their intent at `info` *before* the request**, not only their outcome —
 `publish_draft.publishing`, `comment_on_post.posting`, `restack_item.restacking`, with the full text
@@ -328,12 +329,31 @@ nothing and closed the last route that accepted a body unchecked. Six measured f
   `plaintext` the plain-text value, and an unrecognised name renders as Plain Text with no error, so
   omitting the attr beats guessing.
 
-**Images can be referenced but not uploaded**, which is the contract's sharpest limit: `captionedImage`
-is in 60 of 60 sampled posts and `image2.src` must already point at a Substack-hosted asset.
-`POST /api/v1/image` was tried on the publication host as JSON, as form-urlencoded and as multipart —
-**all three hang**, the network log showing the request pending past a minute with no response, and the
-cross-origin `substack.com` attempt never settled either. So neither `python-substack`'s signature nor
-the fork's is confirmed. **Do not implement an upload from either.**
+**Images can be uploaded after all, and `upload_image` is how** — this once read "cannot be uploaded,
+`POST /api/v1/image` hangs in all three encodings, do not implement." That record was wrong. Re-measured
+live 2026-08-08 on `implementing.substack.com` from the authenticated dashboard: the endpoint answers
+**200 in ~300ms**. The three earlier attempts (JSON, form-urlencoded, multipart) failed because they sent
+the wrong *thing*, not for a header detail or a Cloudflare wall — the body is JSON `{image:
+"data:<mime>;base64,…"}`, a **data URI**, built in the editor from `canvas.toDataURL()`. The response is
+`{id, url, contentType, bytes, imageWidth, imageHeight}`, `url` on `substack-post-media.s3.amazonaws.com`
+— the host every `image2.src` uses — and it renders through Substack's CDN (proven end to end on a real
+draft: upload → `captionedImage` → PUT → the editor shows a `substackcdn.com/image/fetch/…` render).
+Two measured facts shape the tool:
+- **Substack server-fetches only its own S3 bucket.** An external URL passed as `image` answers
+  `400 "Failed to fetch image"`, so `upload_image` downloads the URL itself and re-encodes it. That
+  download is the one place this server fetches a caller-chosen host, so it is guarded: `http(s)` only,
+  an SSRF block on private/loopback/link-local addresses *after* DNS resolution and re-checked on every
+  redirect hop, an `image/*` content-type check (HEIC refused early, as the dashboard does), and a 10 MB
+  cap that is **ours, not Substack's** — the bundle's `MAX_FILE_SIZE` could not be read from the minified
+  source.
+- **The data URI is elided in the logger, not just kept out of the tool's own lines.** `SubstackApi` logs
+  every request body at info, so a real upload would put hundreds of KB of base64 on one line;
+  `src/logger.js` truncates a `data:…;base64,` value to its prefix and omitted length. A post body, being
+  prose, is still logged in full — the two are different in kind.
+
+**Still unverified:** every live check used the browser session cookie, not `SUBSTACK_SESSION_TOKEN` in a
+header. Equivalent in principle, unconfirmed through `SubstackApi` — the first thing to check if the tool
+misbehaves against the real API.
 
 **`set_post_body` returns a node tally, not `'OK'`**, because validation cannot report what was never
 sent: a document with no paywall is exactly as valid as one with a paywall. This was measured — a model
