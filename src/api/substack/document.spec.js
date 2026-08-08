@@ -191,12 +191,30 @@ describe('postBodySchema — lists and quotes', () => {
     assert.equal(parse(doc({type: 'ordered_list', content: [item('one')]})).success, true);
   });
 
-  test('accepts the start attr the editor writes', () => {
+  test('accepts the full attr bag the editor writes on a numbered list', () => {
     const list = {type: 'ordered_list', attrs: {start: 3, type: null, order: 1}, content: [item('three')]};
     const result = parse(doc(list));
 
     assert.equal(result.success, true);
-    assert.equal(result.data.content[0].attrs.start, 3);
+    assert.deepEqual(result.data.content[0].attrs, {start: 3, type: null, order: 1});
+  });
+
+  // Measured 2026-08-08 against the live editor: `order` is what renders, `start` is stored and
+  // ignored. A list given only {start: 3} numbers from 1, with a 200 and no error, so the schema
+  // describes `order` as the one to set. Both are accepted because the editor writes both.
+  test('accepts order, which is the attr that renders', () => {
+    const result = parse(doc({type: 'ordered_list', attrs: {order: 3}, content: [item('three')]}));
+
+    assert.equal(result.success, true);
+    assert.equal(result.data.content[0].attrs.order, 3);
+  });
+
+  test('describes order as the renderer-visible attr and start as ignored', () => {
+    const json = z.toJSONSchema(postBodySchema, {target: 'draft-7', io: 'input'});
+    const published = JSON.stringify(json);
+
+    assert.match(published, /the attr that renders/);
+    assert.match(published, /ignored by the renderer/);
   });
 
   test('accepts a list nested inside a list item', () => {

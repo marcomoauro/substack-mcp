@@ -79,10 +79,20 @@ const bulletListNode = z.strictObject({
   get content() { return z.array(listItemNode); },
 }).describe('A bulleted list.');
 
+// `order` is what renders, not `start` — measured 2026-08-08 against the live editor, which is the
+// only thing that could have caught it. A list given `{start: 3}` is stored verbatim, answers 200, and
+// then numbers from 1 with no error anywhere; `{order: 3}` numbers from 3. The editor itself writes
+// both (`{start: 1, type: null, order: 1}`), which is why reading one of its documents suggests either
+// would do. Describing `start` as the one to set would have made this the sixth silent-ignore in this
+// API and the first of our own making.
 const orderedListNode = z.strictObject({
   type: z.literal('ordered_list'),
-  attrs: looseAttrs.extend({start: z.number().int().optional()}).optional()
-    .describe('Omit unless the list starts somewhere other than 1.'),
+  attrs: looseAttrs.extend({
+    order: z.number().int().optional()
+      .describe('The number the list starts from. Omit for 1. This is the attr that renders.'),
+    start: z.number().int().optional()
+      .describe('Written by the editor next to `order` and ignored by the renderer. Set `order` instead.'),
+  }).optional(),
   get content() { return z.array(listItemNode); },
 }).describe('A numbered list.');
 
