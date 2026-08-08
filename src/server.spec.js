@@ -1,7 +1,9 @@
 import {test, describe, before, after, afterEach} from 'node:test';
+import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 import {HttpResponse} from 'msw';
 import {connectMcpClient} from '../test/helpers/mcp-harness.js';
+import {tools} from './server.js';
 import {createMswServer, DRAFTS_URL} from '../test/helpers/msw-server.js';
 import {setTestEnv} from '../test/helpers/env.js';
 import {captureLogs} from '../test/helpers/capture-logs.js';
@@ -452,5 +454,30 @@ describe('MCP server — the cost of the published document schema', () => {
     } finally {
       await close();
     }
+  });
+});
+
+describe('README — documents every registered tool', () => {
+  // The README is the only documentation a user of the published package reads, and nothing else
+  // keeps it in step with the registry: set_post_body shipped registered but undocumented, and no
+  // test noticed. This compares the two sets in both directions, because each failure hurts
+  // differently — a tool missing from the README is invisible to whoever installs the package, while
+  // a README entry with no tool behind it sends someone to call something that answers an error.
+  const readmeToolNames = () => {
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+
+    // Only lowercase snake_case names: the same markup wraps the two installation options
+    // ("Option 1: Using NPX"), which are not tools.
+    return [...readme.matchAll(/<summary><strong>([a-z_]+)<\/strong>/g)].map(match => match[1]).sort();
+  };
+
+  test('every registered tool has a README section, and every documented tool is registered', () => {
+    assert.deepEqual(readmeToolNames(), Object.keys(tools).sort());
+  });
+
+  test('no tool is documented twice', () => {
+    const documented = readmeToolNames();
+
+    assert.deepEqual(documented, [...new Set(documented)]);
   });
 });
