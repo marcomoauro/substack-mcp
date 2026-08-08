@@ -507,10 +507,11 @@ literals (`{a: 1}`, not `{ a: 1 }`).
   SDK, and `registerTool` throws `inputSchema must be a Zod schema or raw shape` for anything
   else — the SDK's validation *is* zod. npm auto-installs it even if it leaves `package.json`,
   so removing the direct dependency buys nothing and unpins the version.
-- **`ZodError` details live on `.issues`, not `.errors`** (zod 4 renamed it). The only reader in
-  `src/` is the `create_draft_post.args.invalid` log — the SDK formats the message it sends to
-  the client — and `.errors` silently yields `undefined` rather than failing, so a handler that
-  inspects them logs nothing and reports no error.
+- **`ZodError` details live on `.issues`, not `.errors`** (zod 4 renamed it). The readers in
+  `src/` are the `*.args.invalid` logs (`create_draft_post`, `upload_image`, and the other tools
+  that parse in a try/catch) — the SDK formats the message it sends to the client — and `.errors`
+  silently yields `undefined` rather than failing, so a handler that inspects them logs nothing and
+  reports no error.
 
 ## Verifying the server actually works
 

@@ -70,6 +70,12 @@ describe('uploadImageHandler — content validation', () => {
     await assert.rejects(run({url: SOURCE}), /HEIC is not accepted/);
     assert.equal(msw.requests.find((r) => r.url.endsWith('/api/v1/image')), undefined);
   });
+
+  test('rejects the HEIC -sequence variant too', async () => {
+    msw.server.use(sourceHandler({type: 'image/heic-sequence'}));
+    await assert.rejects(run({url: SOURCE}), /HEIC is not accepted/);
+    assert.equal(msw.requests.find((r) => r.url.endsWith('/api/v1/image')), undefined);
+  });
 });
 
 describe('uploadImageHandler — redirect SSRF guard', () => {
@@ -106,6 +112,14 @@ describe('isPrivateAddress', () => {
     assert.equal(isPrivateAddress('::ffff:127.0.0.1', 6), true);
     assert.equal(isPrivateAddress('2606:2800:220:1:248:1893:25c8:1946', 6), false);
   });
+
+  // The URL parser compresses an IPv4-mapped host to hex, so the dotted-only check was an SSRF
+  // hole: these are 169.254.169.254 and 127.0.0.1 in the form isPrivateAddress actually receives.
+  test('flags an IPv4-mapped address written in the compressed hex form', () => {
+    assert.equal(isPrivateAddress('::ffff:a9fe:a9fe', 6), true);
+    assert.equal(isPrivateAddress('::ffff:7f00:1', 6), true);
+    assert.equal(isPrivateAddress('::ffff:5db8:d822', 6), false); // 93.184.216.34, public
+  });
 });
 
 describe('uploadImageHandler — SSRF and scheme guards', () => {
@@ -122,6 +136,64 @@ describe('uploadImageHandler — SSRF and scheme guards', () => {
 
   test('rejects a non-http(s) scheme up front', async () => {
     await assert.rejects(run({url: 'ftp://example.com/x.png'}), /only http and https/);
+  });
+
+  test('de-brackets an IPv6 host before the lookup, and still guards it', async () => {
+    let seenHost;
+    const lookup = async (hostname) => { seenHost = hostname; return [{address: '::1', family: 6}]; };
+    let fetched = false;
+    const fetchImpl = async () => { fetched = true; return new HttpResponse(); };
+    await assert.rejects(
+      uploadImageHandler({url: 'http://[::1]/x.png'}, {lookup, fetchImpl}),
+      /private\/loopback/
+    );
+    assert.equal(seenHost, '::1'); // de-bracketed, not '[::1]'
+    assert.equal(fetched, false);
+  });
+});
+
+describe('uploadImageHandler — redirect edge cases', () => {
+  const publicOnly = async () => [{address: '93.184.216.34', family: 4}];
+
+  test('rejects after too many redirects', async () => {
+    let n = 0;
+    const fetchImpl = async () =>
+      new HttpResponse(null, {status: 302, headers: {Location: `https://images.example.com/n${n++}.jpg`}});
+    await assert.rejects(
+      uploadImageHandler({url: 'https://images.example.com/a.jpg'}, {lookup: publicOnly, fetchImpl}),
+      /too many redirects/
+    );
+  });
+
+  test('rejects a redirect with no Location header', async () => {
+    const fetchImpl = async () => new HttpResponse(null, {status: 302});
+    await assert.rejects(
+      uploadImageHandler({url: 'https://images.example.com/a.jpg'}, {lookup: publicOnly, fetchImpl}),
+      /no Location header/
+    );
+  });
+});
+
+describe('uploadImageHandler — Content-Length pre-check', () => {
+  test('rejects a declared-oversize body before reading it', async () => {
+    let read = false;
+    const fetchImpl = async () => new Response('tiny', {
+      status: 200,
+      headers: {'Content-Type': 'image/png', 'Content-Length': String(MAX_IMAGE_BYTES + 1)},
+    });
+    // Wrap arrayBuffer so we can prove it was never called: the header alone must reject.
+    const orig = fetchImpl;
+    const spyingFetch = async (...a) => {
+      const r = await orig(...a);
+      const arrayBuffer = r.arrayBuffer.bind(r);
+      r.arrayBuffer = (...x) => { read = true; return arrayBuffer(...x); };
+      return r;
+    };
+    await assert.rejects(
+      uploadImageHandler({url: 'https://images.example.com/a.png'}, {lookup: publicLookup, fetchImpl: spyingFetch}),
+      /Content-Length.*over the .* limit/
+    );
+    assert.equal(read, false);
   });
 });
 
