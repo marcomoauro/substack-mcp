@@ -90,3 +90,36 @@ describe('uploadImageHandler — redirect SSRF guard', () => {
     assert.equal(msw.requests.find((r) => r.url.endsWith('/api/v1/image')), undefined);
   });
 });
+
+describe('isPrivateAddress', () => {
+  test('flags loopback, private, link-local, unique-local; allows public', () => {
+    assert.equal(isPrivateAddress('127.0.0.1', 4), true);
+    assert.equal(isPrivateAddress('10.1.2.3', 4), true);
+    assert.equal(isPrivateAddress('172.16.0.1', 4), true);
+    assert.equal(isPrivateAddress('192.168.1.1', 4), true);
+    assert.equal(isPrivateAddress('169.254.169.254', 4), true);
+    assert.equal(isPrivateAddress('93.184.216.34', 4), false);
+    assert.equal(isPrivateAddress('::1', 6), true);
+    assert.equal(isPrivateAddress('fe80::1', 6), true);
+    assert.equal(isPrivateAddress('fd00::1', 6), true);
+    assert.equal(isPrivateAddress('::ffff:127.0.0.1', 6), true);
+    assert.equal(isPrivateAddress('2606:2800:220:1:248:1893:25c8:1946', 6), false);
+  });
+});
+
+describe('uploadImageHandler — SSRF and scheme guards', () => {
+  test('rejects a host that resolves to a private address, without fetching', async () => {
+    let fetched = false;
+    const fetchImpl = async () => { fetched = true; return new HttpResponse(); };
+    const privateLookup = async () => [{address: '169.254.169.254', family: 4}];
+    await assert.rejects(
+      uploadImageHandler({url: 'http://metadata.internal/'}, {lookup: privateLookup, fetchImpl}),
+      /private\/loopback/
+    );
+    assert.equal(fetched, false);
+  });
+
+  test('rejects a non-http(s) scheme up front', async () => {
+    await assert.rejects(run({url: 'ftp://example.com/x.png'}), /only http and https/);
+  });
+});
