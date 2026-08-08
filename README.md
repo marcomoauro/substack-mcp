@@ -170,7 +170,7 @@ rejected with a note to convert it, and the image may not exceed 10 MB.
 </details>
 
 <details>
-<summary><strong>update_draft</strong> - Change a draft's title, subtitle or audience</summary>
+<summary><strong>update_draft</strong> - Change a draft's title, subtitle or any of its Post settings</summary>
 
 The update is **partial**: only the fields you pass change, and the body is left alone.
 
@@ -178,10 +178,19 @@ The update is **partial**: only the fields you pass change, and the body is left
 - `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
 - `draft_title` (string, optional)
 - `draft_subtitle` (string, optional)
-- `audience` (`everyone` | `only_paid` | `founding`, optional)
+- `audience` (`everyone` | `only_paid` | `only_free` | `founding`, optional)
+- `write_comment_permissions` (`everyone` | `subscribers` | `only_paid` | `none`, optional): who may comment
+- `default_comment_sort` (`best_first` | `most_recent_first` | `oldest_first`, optional)
+- `cover_image` (string, optional): the social preview image. A URL already on `substack-post-media.s3.amazonaws.com` or `substackcdn.com` is used as-is; anything else is downloaded and re-hosted on Substack first, under the same guards as `upload_image`
+- `social_title` (string, optional): the title used when the post is shared elsewhere
+- `description` (string, optional): the social preview description — *not* the subtitle
+- `search_engine_title` (string, optional)
+- `search_engine_description` (string, optional)
+- `slug` (string, optional): the post's URL slug
 
-**Returns**: `{draft_id, updated_fields, draft_title, draft_subtitle, audience, is_published}`.
-A call with no field to change is refused rather than sent as a no-op.
+**Returns**: `{draft_id, updated_fields, draft_title, draft_subtitle, audience, is_published, cover_image, cover_image_rehosted_from}`.
+A call with no field to change is refused rather than sent as a no-op. `cover_image` is the URL that
+actually landed, which differs from the one passed when it was re-hosted.
 </details>
 
 <details>

@@ -45,8 +45,9 @@ the tally, `grep -E '^(not ok|✖)'` for what broke.
 - `src/server.js` — `createServer()` factory plus the `tools` registry. **No side effects at
   import time**: no env reads, no transport connection. Tests depend on this.
 - `src/tools/<name>.js` — one file per MCP tool, exporting a zod schema and a handler.
-- `src/api/substack/` — `SubstackApi` (HTTP), `SubstackPost` (ProseMirror document builder) and
-  `SubscriberQuery` (the subscriber filter DSL).
+- `src/api/substack/` — `SubstackApi` (HTTP), `SubstackPost` (ProseMirror document builder),
+  `SubscriberQuery` (the subscriber filter DSL) and `image.js` (the guarded fetch of a
+  caller-chosen URL, shared by `upload_image` and `update_draft`'s `cover_image`).
 - `src/logger.js` — the only place that writes a log line. No dependencies, no state.
 - `test/helpers/` — shared test helpers only; no tests live here.
 
@@ -164,8 +165,13 @@ returns a single draft whole.
 
 **The draft lifecycle is four verbs on one path.** `POST /drafts`, `PUT /drafts/:id`,
 `POST /drafts/:id/publish`, `DELETE /drafts/:id` — all verified except publish, which cannot be
-confirmed without making something public. Two things follow from `DELETE` being shared with
-published posts:
+confirmed without making something public. Two of the four carry a trap of their own:
+
+- **`DELETE` is shared with published posts** and removes a live post just as readily, so
+  `delete_draft` spends a read to refuse an `is_published` target rather than exposing that reach
+  behind a draft-shaped name.
+- **`PUT` is genuinely partial** — a body carrying only `draft_title` changed that and preserved the
+  body — so an absent key must never be sent as null.
 
 **Publishing: the email flag is on the draft, not only in the request.** The bundle builds the call as
 `post('/api/v1/drafts/' + id + '/publish').send({send: true, only_send: true})` — so the path and the
@@ -180,10 +186,43 @@ Two traps around it:
   determined without publishing, and the ambiguity is dangerous in one direction only: a body `send`
   that turns out to be ignored mails the entire list. `publish_draft` therefore PUTs the intent to the
   draft *first* and passes `send` as well, so both possible behaviours agree. A failing PUT aborts —
-  publishing after the intent failed to save is the scenario the write exists to prevent. it removes a live post just as readily, so `delete_draft` spends a read to refuse an
-`is_published` target rather than exposing that reach behind a draft-shaped name. And `PUT` is
-genuinely partial — a body carrying only `draft_title` changed that and preserved the body — so an
-absent key must never be sent as null.
+  publishing after the intent failed to save is the scenario the write exists to prevent.
+
+**The draft's Post settings panel is nine writable fields, and six of its neighbours are lies.**
+Verified 2026-08-08, each by a single-key `PUT /api/v1/drafts/:id` read back with a `GET`:
+`audience` (`everyone|only_paid|only_free|founding` — the panel offers the first three, the API takes
+`founding` too), `write_comment_permissions` (`everyone|subscribers|only_paid|none`),
+`default_comment_sort` (`best_first|most_recent_first|oldest_first`), `cover_image`, `social_title`,
+`description` (the social preview's, *not* the subtitle), `search_engine_title`,
+`search_engine_description` and `slug`. The panel's DOM is the source for the enums — its controls
+are real inputs carrying `name`/`value` — but the UI names are not the wire names: `commentLevel` is
+`write_comment_permissions`, `commentSort` is `default_comment_sort`.
+
+Three traps, all of them this API's signature move:
+
+- **Six fields answer 200 and change nothing:** `postSchedules`, `language`, `email_from_name`,
+  `is_draft_hidden`, `ai_detection_disabled`, `free_unlock_required`. That is the **seventh** distinct
+  silent-ignore here, and `postSchedules` is the dangerous one — scheduling looks settable through
+  the draft and is not, so it needs an endpoint this server does not yet have.
+- **The validation is asymmetric, and it fails worst where it matters most.** A bad `audience`,
+  `default_comment_sort` or `meter_type` answers 400 *naming* the parameter and its value; a bad
+  `draft_section_id` answers 400 `"Section not found"`. But a bad `write_comment_permissions` answers
+  `{"error":"Something went wrong","type":"single"}` — no field, no valid set. Its zod enum is the
+  only diagnosis a caller will ever get, which is why it is an enum and not a string.
+- **`cover_image` is not validated at all.** The literal string `"not-a-url-at-all"` was accepted
+  with a 200 and stored, and so was an external Wikimedia URL. Substack will never say that a cover
+  cannot render — the same failure the fork's external `logo_url`/`photo_url` hit. `update_draft`
+  therefore forwards a URL on `substack-post-media.s3.amazonaws.com` or `substackcdn.com` unchanged
+  and re-hosts anything else through `POST /api/v1/image` first, since Substack server-fetches only
+  its own bucket. The re-host runs *before* the PUT so a download failure cannot leave the other
+  eight fields written.
+
+`meter_type` takes only `none` and `metered`; every other value 400s. It, `should_send_email`,
+`should_send_free_preview`, `explicit`, `hide_from_feed`, `show_guest_bios`,
+`exempt_from_archive_paywall` and `podcast_description` are all writable and all deliberately
+unexposed — the panel is the boundary. `should_send_email` especially: `publish_draft` already writes
+it as the publish intent, and a second door onto the one flag that can mail the whole list buys
+convenience at the cost of the irreversible.
 
 **There are two hosts, and they are not interchangeable.** The publisher surface is on the
 publication and keyed by publication id; *your profile, your subscriptions, the reader inbox, the
@@ -341,19 +380,27 @@ draft: upload → `captionedImage` → PUT → the editor shows a `substackcdn.c
 Two measured facts shape the tool:
 - **Substack server-fetches only its own S3 bucket.** An external URL passed as `image` answers
   `400 "Failed to fetch image"`, so `upload_image` downloads the URL itself and re-encodes it. That
-  download is the one place this server fetches a caller-chosen host, so it is guarded: `http(s)` only,
+  download is where this server fetches a caller-chosen host, so it is guarded: `http(s)` only,
   an SSRF block on private/loopback/link-local addresses *after* DNS resolution and re-checked on every
   redirect hop, an `image/*` content-type check (HEIC refused early, as the dashboard does), and a 10 MB
   cap that is **ours, not Substack's** — the bundle's `MAX_FILE_SIZE` could not be read from the minified
-  source.
+  source. The pipeline lives in `src/api/substack/image.js` rather than in the tool, because
+  `update_draft`'s `cover_image` re-hosts through the identical path — a second copy of an SSRF guard
+  is a second place to get it wrong. Its errors are prefixed `image:`, not `upload_image:`, so a
+  `cover_image` failure is not signed by a tool the caller never invoked.
 - **The data URI is elided in the logger, not just kept out of the tool's own lines.** `SubstackApi` logs
   every request body at info, so a real upload would put hundreds of KB of base64 on one line;
   `src/logger.js` truncates a `data:…;base64,` value to its prefix and omitted length. A post body, being
   prose, is still logged in full — the two are different in kind.
 
-**Still unverified:** every live check used the browser session cookie, not `SUBSTACK_SESSION_TOKEN` in a
-header. Equivalent in principle, unconfirmed through `SubstackApi` — the first thing to check if the tool
-misbehaves against the real API.
+**The header token is verified now, and this is what closed it.** Every earlier live check ran on the
+browser session cookie, leaving `SUBSTACK_SESSION_TOKEN` in a header through `SubstackApi` as the
+untested path. On 2026-08-08 a scratch draft was driven end to end through the real handlers with that
+env var: `create_draft_post` → `update_draft` with all nine settings *and* an external
+`upload.wikimedia.org` cover → `get_draft` → `delete_draft`. All eleven fields read back exactly as
+sent, and the cover came back on `substack-post-media.s3.amazonaws.com`, so the download, the
+`POST /api/v1/image` re-host and the PUT all authenticate the same way the cookie does. Nothing in the
+token path is speculative any more.
 
 **`set_post_body` returns a node tally, not `'OK'`**, because validation cannot report what was never
 sent: a document with no paywall is exactly as valid as one with a paywall. This was measured — a model
