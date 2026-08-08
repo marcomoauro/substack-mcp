@@ -181,6 +181,18 @@ describe('updateDraftHandler', () => {
     assert.equal(msw.requests.length, 0, 'no request should have been made');
   });
 
+  // Derived from the schema, not hand-written: the message used to list three field names literally,
+  // which silently stops being true the first time a field is added.
+  test('the no-fields message names every settable field and no others', async () => {
+    const error = await updateDraftHandler({draft_id: 1}).catch((e) => e);
+
+    const expected = Object.keys(updateDraftSchema.shape).filter((name) => name !== 'draft_id');
+    for (const field of expected) {
+      assert.ok(error.message.includes(field), `the message should name ${field}`);
+    }
+    assert.ok(!error.message.includes('draft_id'), 'draft_id is required, not a settable field');
+  });
+
   test('reports which fields it changed', async () => {
     const result = await updateDraftHandler({draft_id: 167712345, draft_title: 'New title'});
 
