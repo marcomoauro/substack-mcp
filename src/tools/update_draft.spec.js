@@ -39,6 +39,62 @@ describe('updateDraftSchema', () => {
     assert.throws(() => updateDraftSchema.parse({draft_id: 1, audience: 'premium'}), z.ZodError);
   });
 
+  // Measured live 2026-08-08: the API accepts only_free and the editor's Audience control offers it.
+  // The enum shipped without it, so a legal value was unreachable through this server.
+  test('accepts only_free, which the enum used to refuse', () => {
+    assert.deepEqual(
+      updateDraftSchema.parse({draft_id: 1, audience: 'only_free'}),
+      {draft_id: 1, audience: 'only_free'}
+    );
+  });
+
+  test('accepts every measured comment permission', () => {
+    for (const level of ['everyone', 'subscribers', 'only_paid', 'none']) {
+      assert.deepEqual(
+        updateDraftSchema.parse({draft_id: 1, write_comment_permissions: level}),
+        {draft_id: 1, write_comment_permissions: level}
+      );
+    }
+  });
+
+  // Substack answers a bad write_comment_permissions with {"error":"Something went wrong"} — no
+  // field name, no valid set. This enum is the only diagnosis a caller will ever get.
+  test('rejects a comment permission outside the enum', () => {
+    assert.throws(
+      () => updateDraftSchema.parse({draft_id: 1, write_comment_permissions: 'bogus_level'}),
+      z.ZodError
+    );
+  });
+
+  test('accepts every measured comment sort', () => {
+    for (const sort of ['best_first', 'most_recent_first', 'oldest_first']) {
+      assert.deepEqual(
+        updateDraftSchema.parse({draft_id: 1, default_comment_sort: sort}),
+        {draft_id: 1, default_comment_sort: sort}
+      );
+    }
+  });
+
+  // These six answer 200 and change nothing — measured one PUT at a time on 2026-08-08. They stay
+  // off the schema so strictObject tells the model the key does not exist, rather than letting it
+  // believe it scheduled a post or set a language.
+  test('rejects the fields the API silently ignores', () => {
+    for (const field of [
+      'postSchedules',
+      'language',
+      'email_from_name',
+      'is_draft_hidden',
+      'ai_detection_disabled',
+      'free_unlock_required',
+    ]) {
+      assert.throws(
+        () => updateDraftSchema.parse({draft_id: 1, [field]: 'x'}),
+        (error) => /Unrecognized key/.test(error.message) && error.message.includes(field),
+        `${field} should be rejected by name`
+      );
+    }
+  });
+
   test('publishes a description for every field', () => {
     const json = z.toJSONSchema(updateDraftSchema, {target: 'draft-7', io: 'input'});
 
@@ -74,6 +130,35 @@ describe('updateDraftHandler', () => {
       draft_title: 'T',
       draft_subtitle: 'S',
       audience: 'only_paid',
+    });
+  });
+
+  test('forwards every settings field under its wire name', async () => {
+    await updateDraftHandler({
+      draft_id: 1,
+      draft_title: 'T',
+      draft_subtitle: 'S',
+      audience: 'only_free',
+      write_comment_permissions: 'only_paid',
+      default_comment_sort: 'most_recent_first',
+      social_title: 'Social',
+      description: 'Social description',
+      search_engine_title: 'SEO title',
+      search_engine_description: 'SEO description',
+      slug: 'my-post-slug',
+    });
+
+    assert.deepEqual(msw.requests.at(-1).body, {
+      draft_title: 'T',
+      draft_subtitle: 'S',
+      audience: 'only_free',
+      write_comment_permissions: 'only_paid',
+      default_comment_sort: 'most_recent_first',
+      social_title: 'Social',
+      description: 'Social description',
+      search_engine_title: 'SEO title',
+      search_engine_description: 'SEO description',
+      slug: 'my-post-slug',
     });
   });
 
