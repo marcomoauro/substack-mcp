@@ -1,10 +1,15 @@
 import {test, describe} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {TEST_ENV} from '../test/helpers/env.js';
 
 const ENTRYPOINT = fileURLToPath(new URL('./index.js', import.meta.url));
+
+const PACKAGE_VERSION = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+).version;
 
 const HANDSHAKE = [
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1.0.0"}}}',
@@ -121,6 +126,11 @@ describe('entrypoint — stdio transport', () => {
 
     const initialize = messages.find((message) => message.id === 1);
     assert.equal(initialize.result.serverInfo.name, 'Substack MCP');
+    // This is the version an MCP client displays, and it is the one number here that a
+    // release has to move. As a literal it silently didn't: the published v1.1.0 image
+    // still introduced itself as 1.0.0. Reading package.json is what keeps the two equal,
+    // and asserting against the same file is what proves it is still being read.
+    assert.equal(initialize.result.serverInfo.version, PACKAGE_VERSION);
     assert.equal(initialize.result.protocolVersion, '2024-11-05');
     // Only `tools` is advertised. The server used to declare `resources` and `logging` too
     // while registering no handler for either, so `resources/list` answered -32601 Method

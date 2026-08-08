@@ -1,3 +1,4 @@
+import {readFileSync} from "node:fs";
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {createDraftPostSchema, createDraftPostHandler} from "./tools/create_draft_post.js";
 import {setPostBodySchema, setPostBodyHandler} from "./tools/set_post_body.js";
@@ -27,6 +28,18 @@ import {getProfileFeedSchema, getProfileFeedHandler} from "./tools/get_profile_f
 import {getCommentThreadSchema, getCommentThreadHandler} from "./tools/get_comment_thread.js";
 import {restackItemSchema, restackItemHandler} from "./tools/restack_item.js";
 import {logger} from "./logger.js";
+
+// The version an MCP client shows for this server. Read from package.json rather than
+// written out here, because a literal only stays true until the next release forgets it —
+// the published v1.1.0 still introduced itself as 1.0.0. `npm version` moves package.json
+// and nothing else, so this is the single place the number lives.
+//
+// Read at import time on purpose, and it does not break the no-side-effects rule this file
+// keeps: the hazard there is reading the environment before a test can set it, and a file
+// that ships next to this one is neither mutable nor test-visible. `readFileSync` over a
+// JSON import attribute because that still prints an ExperimentalWarning on the Node 22
+// floor, and every stray byte on stderr is a line the log parser has to survive.
+const {version} = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 export const tools = {
   create_draft_post: {
@@ -277,7 +290,7 @@ export function createServer() {
   // list_tools handler, dispatch table or JSON Schema conversion to keep in sync.
   // Capabilities are derived too: the server no longer advertises `resources` and
   // `logging`, which it never implemented.
-  const server = new McpServer({name: "Substack MCP", version: "1.0.0"});
+  const server = new McpServer({name: "Substack MCP", version});
 
   for (const [name, {description, schema, handler}] of Object.entries(tools)) {
     server.registerTool(name, {description, inputSchema: schema}, async (args) => {
