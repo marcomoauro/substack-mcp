@@ -165,8 +165,13 @@ returns a single draft whole.
 
 **The draft lifecycle is four verbs on one path.** `POST /drafts`, `PUT /drafts/:id`,
 `POST /drafts/:id/publish`, `DELETE /drafts/:id` — all verified except publish, which cannot be
-confirmed without making something public. Two things follow from `DELETE` being shared with
-published posts:
+confirmed without making something public. Two of the four carry a trap of their own:
+
+- **`DELETE` is shared with published posts** and removes a live post just as readily, so
+  `delete_draft` spends a read to refuse an `is_published` target rather than exposing that reach
+  behind a draft-shaped name.
+- **`PUT` is genuinely partial** — a body carrying only `draft_title` changed that and preserved the
+  body — so an absent key must never be sent as null.
 
 **Publishing: the email flag is on the draft, not only in the request.** The bundle builds the call as
 `post('/api/v1/drafts/' + id + '/publish').send({send: true, only_send: true})` — so the path and the
@@ -181,10 +186,7 @@ Two traps around it:
   determined without publishing, and the ambiguity is dangerous in one direction only: a body `send`
   that turns out to be ignored mails the entire list. `publish_draft` therefore PUTs the intent to the
   draft *first* and passes `send` as well, so both possible behaviours agree. A failing PUT aborts —
-  publishing after the intent failed to save is the scenario the write exists to prevent. it removes a live post just as readily, so `delete_draft` spends a read to refuse an
-`is_published` target rather than exposing that reach behind a draft-shaped name. And `PUT` is
-genuinely partial — a body carrying only `draft_title` changed that and preserved the body — so an
-absent key must never be sent as null.
+  publishing after the intent failed to save is the scenario the write exists to prevent.
 
 **The draft's Post settings panel is nine writable fields, and six of its neighbours are lies.**
 Verified 2026-08-08, each by a single-key `PUT /api/v1/drafts/:id` read back with a `GET`:
