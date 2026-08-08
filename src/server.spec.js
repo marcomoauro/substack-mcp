@@ -331,3 +331,88 @@ describe('MCP server — call_tool', () => {
     }
   });
 });
+
+describe('MCP server — set_post_body over the protocol', () => {
+  async function publishedSchema() {
+    const {client, close} = await connectMcpClient();
+
+    try {
+      const {tools} = await client.listTools();
+      return tools.find(tool => tool.name === 'set_post_body')?.inputSchema;
+    } finally {
+      await close();
+    }
+  }
+
+  test('is registered and published with exactly a draft_id and a body', async () => {
+    const schema = await publishedSchema();
+
+    assert.ok(schema, 'set_post_body should be registered');
+    assert.deepEqual(Object.keys(schema.properties).sort(), ['body', 'draft_id']);
+    assert.equal(schema.additionalProperties, false);
+  });
+
+  // The published schema is what teaches a model the vocabulary. If the node names stop appearing in
+  // it the tool still works and every caller has to guess, which no other test would notice.
+  test('publishes the node vocabulary a caller has to know', async () => {
+    const published = JSON.stringify(await publishedSchema());
+
+    for (const type of [
+      'paragraph', 'heading', 'bullet_list', 'ordered_list', 'blockquote',
+      'highlighted_code_block', 'code_block', 'horizontal_rule', 'paywall',
+      'captionedImage', 'image2', 'caption', 'button', 'youtube2',
+      'digestPostEmbed', 'substack_mentions', 'directMessage',
+      'strong', 'em', 'code', 'strikethrough', 'link',
+    ]) {
+      assert.match(published, new RegExp(`"${type}"`), `${type} should appear in the published schema`);
+    }
+  });
+
+  // The recursion has to survive conversion, and draft-7 puts the shared shapes under `definitions`.
+  // Asserting the refs *exist* first is the point: with no recursion the schema contains none, so a
+  // loop over discovered refs would pass while checking nothing.
+  test('publishes a self-contained schema, definitions included', async () => {
+    const schema = await publishedSchema();
+    const refs = [...JSON.stringify(schema).matchAll(/"\$ref":"#\/definitions\/([^"]+)"/g)].map(m => m[1]);
+
+    assert.ok(refs.length > 0, 'the recursive list and blockquote nodes should produce at least one $ref');
+
+    for (const ref of refs) {
+      assert.ok(schema.definitions?.[ref], `definitions.${ref} should exist`);
+    }
+  });
+
+  // McpServer turns anything a tool throws into a *successful* CallToolResult with isError set, so
+  // callTool does not reject. Asserting on a rejection here would check nothing.
+  test('reports an unmodelled node as an error result rather than rejecting', async () => {
+    const {client, close} = await connectMcpClient();
+
+    try {
+      const result = await client.callTool({
+        name: 'set_post_body',
+        arguments: {draft_id: 1, body: {type: 'doc', content: [{type: 'codeBlock'}]}},
+      });
+
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /discriminator|codeBlock|Invalid/);
+    } finally {
+      await close();
+    }
+  });
+
+  test('reports a second paywall as an error result', async () => {
+    const {client, close} = await connectMcpClient();
+
+    try {
+      const result = await client.callTool({
+        name: 'set_post_body',
+        arguments: {draft_id: 1, body: {type: 'doc', content: [{type: 'paywall'}, {type: 'paywall'}]}},
+      });
+
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /at most one paywall/i);
+    } finally {
+      await close();
+    }
+  });
+});
