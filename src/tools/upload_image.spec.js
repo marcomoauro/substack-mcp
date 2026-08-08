@@ -57,6 +57,20 @@ describe('uploadImageHandler — happy path', () => {
   });
 });
 
+describe('uploadImageHandler — content validation', () => {
+  test('rejects a non-image source before uploading', async () => {
+    msw.server.use(sourceHandler({body: Buffer.from('<html>'), type: 'text/html'}));
+    await assert.rejects(run({url: SOURCE}), /not an image/);
+    assert.equal(msw.requests.find((r) => r.url.endsWith('/api/v1/image')), undefined);
+  });
+
+  test('rejects HEIC with a convert message', async () => {
+    msw.server.use(sourceHandler({type: 'image/heic'}));
+    await assert.rejects(run({url: SOURCE}), /HEIC is not accepted/);
+    assert.equal(msw.requests.find((r) => r.url.endsWith('/api/v1/image')), undefined);
+  });
+});
+
 describe('uploadImageHandler — redirect SSRF guard', () => {
   test('rejects a redirect to a private address without uploading', async () => {
     const REDIRECTOR = 'https://images.example.com/redirect.jpg';
