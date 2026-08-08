@@ -6,6 +6,8 @@ import {
   createMswServer,
   DRAFTS_URL,
   DRAFT_RESPONSE,
+  IMAGE_URL,
+  IMAGE_UPLOAD_RESPONSE,
   SUBSCRIBER_STATS_URL,
   SUBSCRIBER_STATS_RESPONSE,
   POSTS_RESPONSE,
@@ -135,6 +137,39 @@ describe('SubstackApi — postDraft', () => {
     const error = await createApi().postDraft({}).catch((e) => e);
 
     assert.match(error.message, /^SubstackRequestException: Invalid Response: not json$/);
+  });
+});
+
+describe('SubstackApi — uploadImage', () => {
+  test('POSTs the data URI as JSON and returns the parsed body', async () => {
+    const api = createApi();
+
+    const result = await api.uploadImage({image: 'data:image/jpeg;base64,QUJD'});
+
+    const seen = msw.requests.find((r) => r.url === IMAGE_URL);
+    assert.equal(seen.method, 'POST');
+    assert.match(seen.headers['content-type'], /^application\/json/);
+    assert.deepEqual(seen.body, {image: 'data:image/jpeg;base64,QUJD'});
+    assert.equal(result.url, IMAGE_UPLOAD_RESPONSE.url);
+    assert.equal(result.bytes, 82768);
+  });
+
+  test('includes postId only when post_id is given', async () => {
+    const api = createApi();
+
+    await api.uploadImage({image: 'data:image/png;base64,QQ==', post_id: 42});
+
+    const seen = msw.requests.find((r) => r.url === IMAGE_URL);
+    assert.deepEqual(seen.body, {image: 'data:image/png;base64,QQ==', postId: 42});
+  });
+
+  test('omits postId when post_id is absent', async () => {
+    const api = createApi();
+
+    await api.uploadImage({image: 'data:image/png;base64,QQ=='});
+
+    const seen = msw.requests.find((r) => r.url === IMAGE_URL);
+    assert.deepEqual(Object.keys(seen.body), ['image']);
   });
 });
 

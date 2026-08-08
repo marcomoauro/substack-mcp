@@ -230,6 +230,29 @@ describe('logger — redaction', () => {
 
     assert.equal(line.args.body, body);
   });
+
+  // A base64 data URI is an opaque blob with no diagnostic value, and a real image upload would
+  // put hundreds of KB of it on one line through `substack.request`. The prefix and elided size
+  // are kept; the payload is dropped. Matched on the value, so it works under any key.
+  test('elides the payload of a base64 data URI, keeping the prefix', () => {
+    process.env.SUBSTACK_MCP_LOG_LEVEL = 'info';
+
+    const payload = 'Zm9v'.repeat(5000);
+    const image = `data:image/png;base64,${payload}`;
+    const [line] = logLines(() => logger.info('substack.request', {body: {image}}));
+
+    assert.match(line.body.image, /^data:image\/png;base64,…\(\d+ base64 chars omitted\)$/);
+    assert.equal(JSON.stringify(line).includes(payload), false);
+  });
+
+  test('leaves a short data URI intact', () => {
+    process.env.SUBSTACK_MCP_LOG_LEVEL = 'info';
+
+    const image = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+    const [line] = logLines(() => logger.info('substack.request', {body: {image}}));
+
+    assert.equal(line.body.image, image);
+  });
 });
 
 describe('logger — resilience', () => {

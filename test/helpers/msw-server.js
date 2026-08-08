@@ -10,6 +10,7 @@ const API = `${TEST_ENV.SUBSTACK_PUBLICATION_URL}/api/v1`;
 const GLOBAL_API = 'https://substack.com/api/v1';
 
 export const DRAFTS_URL = `${API}/drafts`;
+export const IMAGE_URL = `${API}/image`;
 export const PUBLICATION_URL = `${API}/publication`;
 export const USER_PROFILE_URL = `${GLOBAL_API}/user/profile/self`;
 export const POST_TAG_URL = `${API}/publication/post-tag`;
@@ -53,6 +54,16 @@ export const DRAFT_RESPONSE = {
   draft_title: 'Test title',
   draft_subtitle: 'Test subtitle',
   is_published: false,
+};
+
+// These are the exact keys the live `POST /api/v1/image` endpoint returned, verified 2026-08-08.
+export const IMAGE_UPLOAD_RESPONSE = {
+  id: 'test-image-id',
+  url: 'https://substack-post-media.s3.amazonaws.com/public/images/test-image.jpg',
+  contentType: 'image/jpeg',
+  bytes: 82768,
+  imageWidth: 1200,
+  imageHeight: 630,
 };
 
 // Shaped after a real `POST /drafts/:id/publish`: the draft comes back as a post, with the slug and
@@ -567,6 +578,13 @@ export function createMswServer() {
     });
   }
 
+  function imageUploadHandler(responder) {
+    return http.post(IMAGE_URL, async ({request}) => {
+      await record(request);
+      return responder();
+    });
+  }
+
   function subscriberStatsHandler(responder) {
     return http.post(SUBSCRIBER_STATS_URL, async ({request}) => {
       await record(request);
@@ -790,6 +808,7 @@ export function createMswServer() {
 
   const server = setupServer(
     draftsHandler(() => HttpResponse.json(DRAFT_RESPONSE, {status: 200})),
+    imageUploadHandler(() => HttpResponse.json(IMAGE_UPLOAD_RESPONSE, {status: 200})),
     subscriberStatsHandler(() => HttpResponse.json(SUBSCRIBER_STATS_RESPONSE, {status: 200})),
     postsHandler(() => HttpResponse.json(POSTS_RESPONSE, {status: 200})),
     draftDetailHandler(() => HttpResponse.json(DRAFT_DETAIL_RESPONSE, {status: 200})),
@@ -842,6 +861,7 @@ export function createMswServer() {
     server,
     requests,
     draftsHandler,
+    imageUploadHandler,
     subscriberStatsHandler,
     postsHandler,
     draftDetailHandler,

@@ -141,11 +141,32 @@ asked for a paywall can confirm there is one. Validation cannot report a node th
 
 Three things worth knowing:
 - **An image must already be hosted by Substack.** `image2.src` pointing at an external URL is
-  stored but does not render, and this server cannot upload one.
+  stored but does not render. Use `upload_image` to re-host one and get a `src` that works.
 - **A document may contain at most one `paywall`.** Substack accepts two and renders both, leaving
   it undefined which one cuts the post, so this tool refuses the second.
 - **`ordered_list` numbers from `attrs.order`, not `attrs.start`.** A list given only `start`
   renders from 1 with no error.
+</details>
+
+<details>
+<summary><strong>upload_image</strong> - Re-host an external image on Substack</summary>
+
+Substack's editor uploads images as base64 data URIs to `POST /api/v1/image`, which answers with a
+Substack-hosted URL. `image2.src` in `set_post_body` only renders such a URL, so this tool is the
+bridge: give it an http(s) image URL, it downloads the image, re-encodes it, uploads it, and returns
+the hosted URL. Substack itself only re-fetches URLs already in its own storage, so the download
+happens here rather than being handed off.
+
+**Inputs**:
+- `url` (string): the http(s) URL of an image to upload
+- `post_id` (number, optional): the post the image belongs to; its effect is unconfirmed
+
+**Returns**: `{id, url, content_type, bytes, width, height}` — put `url` into an `image2.src` when
+calling `set_post_body`.
+
+The download is guarded: only `http`/`https`, private and loopback hosts are refused after DNS
+resolution (redirects are re-checked at every hop), the content type must be an image, HEIC is
+rejected with a note to convert it, and the image may not exceed 10 MB.
 </details>
 
 <details>

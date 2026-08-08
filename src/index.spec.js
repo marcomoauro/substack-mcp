@@ -157,6 +157,7 @@ describe('entrypoint — stdio transport', () => {
       'restack_item',
       'set_post_body',
       'update_draft',
+      'upload_image',
     ]);
 
     assert.deepEqual(
