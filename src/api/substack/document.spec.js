@@ -179,3 +179,55 @@ describe('postBodySchema — descriptions', () => {
     assert.deepEqual(missing, [], `undescribed: ${missing.join(', ')}`);
   });
 });
+
+describe('postBodySchema — lists and quotes', () => {
+  const item = (value) => ({type: 'list_item', content: [{type: 'paragraph', content: [text(value)]}]});
+
+  test('accepts a bulleted list', () => {
+    assert.equal(parse(doc({type: 'bullet_list', content: [item('one'), item('two')]})).success, true);
+  });
+
+  test('accepts a numbered list', () => {
+    assert.equal(parse(doc({type: 'ordered_list', content: [item('one')]})).success, true);
+  });
+
+  test('accepts the start attr the editor writes', () => {
+    const list = {type: 'ordered_list', attrs: {start: 3, type: null, order: 1}, content: [item('three')]};
+    const result = parse(doc(list));
+
+    assert.equal(result.success, true);
+    assert.equal(result.data.content[0].attrs.start, 3);
+  });
+
+  test('accepts a list nested inside a list item', () => {
+    const nested = {
+      type: 'list_item',
+      content: [
+        {type: 'paragraph', content: [text('outer')]},
+        {type: 'bullet_list', content: [item('inner')]},
+      ],
+    };
+
+    assert.equal(parse(doc({type: 'bullet_list', content: [nested]})).success, true);
+  });
+
+  test('rejects a list item outside a list', () => {
+    assert.equal(parse(doc(item('stray'))).success, false);
+  });
+
+  test('rejects bare text directly inside a list item', () => {
+    assert.equal(parse(doc({type: 'bullet_list', content: [{type: 'list_item', content: [text('x')]}]})).success, false);
+  });
+
+  test('accepts a blockquote of paragraphs', () => {
+    const quote = {type: 'blockquote', content: [{type: 'paragraph', content: [text('quoted')]}]};
+
+    assert.equal(parse(doc(quote)).success, true);
+  });
+
+  test('accepts a blockquote containing a list', () => {
+    const quote = {type: 'blockquote', content: [{type: 'bullet_list', content: [item('one')]}]};
+
+    assert.equal(parse(doc(quote)).success, true);
+  });
+});

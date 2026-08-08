@@ -61,7 +61,39 @@ const headingNode = z.strictObject({
   content: inlineContent.optional().describe('Omit for an empty heading.'),
 }).describe('A section heading, levels 1 to 6.');
 
+// Recursion through getters, which is how zod 4 expresses it. The unions here stay discriminated
+// even though a plain `z.union` would be less awkward: a plain one reports no usable message, which
+// was measured rather than assumed — a malformed node came back as "this is a modelled node, match
+// its shape" with no mention of which field was wrong.
+const listItemNode = z.strictObject({
+  type: z.literal('list_item'),
+  get content() {
+    return z.array(z.discriminatedUnion('type', [paragraphNode, bulletListNode, orderedListNode]))
+      .describe('A paragraph, plus a nested list for sub-items.');
+  },
+}).describe('One item of a list. Its text goes in a paragraph, never directly in the item.');
+
+const bulletListNode = z.strictObject({
+  type: z.literal('bullet_list'),
+  attrs: looseAttrs.optional(),
+  get content() { return z.array(listItemNode); },
+}).describe('A bulleted list.');
+
+const orderedListNode = z.strictObject({
+  type: z.literal('ordered_list'),
+  attrs: looseAttrs.extend({start: z.number().int().optional()}).optional()
+    .describe('Omit unless the list starts somewhere other than 1.'),
+  get content() { return z.array(listItemNode); },
+}).describe('A numbered list.');
+
+const blockquoteNode = z.strictObject({
+  type: z.literal('blockquote'),
+  get content() { return z.array(z.discriminatedUnion('type', [paragraphNode, bulletListNode, orderedListNode])); },
+}).describe('A quotation. Holds paragraphs and lists, not bare text.');
+
 export const postBodySchema = z.strictObject({
   type: z.literal('doc'),
-  content: z.array(z.discriminatedUnion('type', [paragraphNode, headingNode])),
+  content: z.array(z.discriminatedUnion('type', [
+    paragraphNode, headingNode, bulletListNode, orderedListNode, blockquoteNode,
+  ])),
 }).describe('The post body as a Substack ProseMirror document.');
