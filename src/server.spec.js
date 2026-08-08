@@ -66,6 +66,7 @@ describe('MCP server — list_tools', () => {
     'restack_item',
     'set_post_body',
     'update_draft',
+    'upload_image',
   ];
 
   test('exposes exactly the registered tools', async () => {
@@ -91,6 +92,15 @@ describe('MCP server — list_tools', () => {
     assert.deepEqual(Object.keys(inputSchema.properties).sort(), ['body', 'subtitle', 'title']);
     assert.deepEqual([...inputSchema.required].sort(), ['body', 'subtitle', 'title']);
     assert.equal(inputSchema.properties.title.type, 'string');
+  });
+
+  test('upload_image advertises url + optional post_id and forbids extra keys', async () => {
+    const {inputSchema} = (await listToolsByName()).upload_image;
+
+    assert.equal(inputSchema.type, 'object');
+    assert.deepEqual(Object.keys(inputSchema.properties).sort(), ['post_id', 'url']);
+    assert.deepEqual([...(inputSchema.required ?? [])], ['url']);
+    assert.equal(inputSchema.additionalProperties, false);
   });
 
   // Regression guard for the zod 3 -> 4 migration: zod-to-json-schema silently returned a

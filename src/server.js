@@ -1,6 +1,7 @@
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {createDraftPostSchema, createDraftPostHandler} from "./tools/create_draft_post.js";
 import {setPostBodySchema, setPostBodyHandler} from "./tools/set_post_body.js";
+import {uploadImageSchema, uploadImageHandler} from "./tools/upload_image.js";
 import {listSubscribersSchema, listSubscribersHandler} from "./tools/list_subscribers.js";
 import {exportSubscribersSchema, exportSubscribersHandler} from "./tools/export_subscribers.js";
 import {listPostsSchema, listPostsHandler} from "./tools/list_posts.js";
@@ -45,6 +46,14 @@ export const tools = {
       "asked for is there. An image must already be hosted by Substack: this cannot upload one.",
     schema: setPostBodySchema,
     handler: setPostBodyHandler,
+  },
+  upload_image: {
+    description:
+      "Upload an image to your Substack publication from an http(s) URL. The server downloads " +
+      "the image and re-hosts it on Substack; the returned url is what goes into image2.src in " +
+      "set_post_body. Private and loopback hosts are refused, HEIC is not accepted, max 10 MB.",
+    schema: uploadImageSchema,
+    handler: uploadImageHandler,
   },
   list_subscribers: {
     // The engagement caveat still belongs in the description: this endpoint takes the fields it
