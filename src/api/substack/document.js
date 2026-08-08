@@ -91,9 +91,43 @@ const blockquoteNode = z.strictObject({
   get content() { return z.array(z.discriminatedUnion('type', [paragraphNode, bulletListNode, orderedListNode])); },
 }).describe('A quotation. Holds paragraphs and lists, not bare text.');
 
+// `highlighted_code_block`, not `codeBlock`: read off the live editor. `python-substack` declares
+// the latter, and a node by that name is not rendered.
+const codeBlockNode = z.strictObject({
+  type: z.literal('highlighted_code_block'),
+  attrs: looseAttrs.extend({
+    language: z.string().optional().describe(
+      'Lowercase highlight.js name — javascript, typescript, python, bash, json, sql, go, rust, ' +
+      'yaml, css, html and similar. Omit to let Substack auto-detect. An unrecognised value is ' +
+      'accepted and then silently rendered as plain text, so omitting beats guessing.'
+    ),
+  }).optional(),
+  content: inlineContent.describe('One text node holding the whole snippet, newlines included.'),
+}).describe('A syntax-highlighted code block.');
+
+const legacyCodeBlockNode = z.strictObject({
+  type: z.literal('code_block'),
+  attrs: looseAttrs.optional(),
+  content: inlineContent,
+}).describe('The older code block, still present in existing posts. Use highlighted_code_block for new content.');
+
+const horizontalRuleNode = z.strictObject({type: z.literal('horizontal_rule')})
+  .describe('A horizontal divider.');
+
+const paywallNode = z.strictObject({type: z.literal('paywall')})
+  .describe('Everything after this node is for paying subscribers only. At most one per document.');
+
 export const postBodySchema = z.strictObject({
   type: z.literal('doc'),
   content: z.array(z.discriminatedUnion('type', [
     paragraphNode, headingNode, bulletListNode, orderedListNode, blockquoteNode,
+    codeBlockNode, legacyCodeBlockNode, horizontalRuleNode, paywallNode,
   ])),
-}).describe('The post body as a Substack ProseMirror document.');
+})
+  .describe('The post body as a Substack ProseMirror document.')
+  // A refinement does not survive into the published JSON Schema — verified — which is why the rule
+  // is also written into paywallNode's description. Without that a model would meet it by failing.
+  .refine(
+    (document) => document.content.filter((node) => node.type === 'paywall').length <= 1,
+    {message: 'A document may contain at most one paywall node.', path: ['content']}
+  );

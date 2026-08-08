@@ -231,3 +231,45 @@ describe('postBodySchema — lists and quotes', () => {
     assert.equal(parse(doc(quote)).success, true);
   });
 });
+
+describe('postBodySchema — code, rules and the paywall', () => {
+  const code = (attrs) => ({type: 'highlighted_code_block', ...(attrs ? {attrs} : {}), content: [text('const a = 1;')]});
+
+  test('accepts a code block with a language', () => {
+    assert.equal(parse(doc(code({language: 'javascript'}))).success, true);
+  });
+
+  test('accepts a code block with no language, which auto-detects', () => {
+    assert.equal(parse(doc(code())).success, true);
+  });
+
+  test('preserves the nodeId the editor writes', () => {
+    const result = parse(doc(code({language: 'python', nodeId: null})));
+
+    assert.deepEqual(result.data.content[0].attrs, {language: 'python', nodeId: null});
+  });
+
+  // Both node names are in live use: older posts carry code_block, the current editor writes
+  // highlighted_code_block. Rejecting the legacy one would reject those posts.
+  test('accepts the legacy code_block', () => {
+    assert.equal(parse(doc({type: 'code_block', content: [text('legacy')]})).success, true);
+  });
+
+  test('accepts a horizontal rule', () => {
+    assert.equal(parse(doc({type: 'horizontal_rule'})).success, true);
+  });
+
+  test('accepts a single paywall', () => {
+    assert.equal(parse(doc({type: 'paragraph', content: [text('free')]}, {type: 'paywall'})).success, true);
+  });
+
+  // Measured 2026-08-07: two paywalls are accepted by the API with a 200 and rendered by the editor
+  // as two "Paid content below this line" markers, so which one cuts the post is undefined. Neither
+  // the API nor the editor guards this; this refinement is the only check that exists.
+  test('rejects a second paywall', () => {
+    const result = parse(doc({type: 'paywall'}, {type: 'paragraph'}, {type: 'paywall'}));
+
+    assert.equal(result.success, false);
+    assert.match(result.error.issues.map(i => i.message).join(' '), /at most one paywall/i);
+  });
+});
