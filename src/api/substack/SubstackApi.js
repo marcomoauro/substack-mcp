@@ -158,6 +158,21 @@ export default class SubstackApi {
   }
 
   /**
+   * Uploads an image. The body is a data URI under `image`, not a file or a URL — the editor builds
+   * it from `canvas.toDataURL()`. Verified live 2026-08-08: 200 with {id, url, contentType, bytes,
+   * imageWidth, imageHeight}. `post_id` maps to the API's `postId`; an absent one must not be sent as
+   * null (same partial-body rule as everywhere else here).
+   */
+  async uploadImage({image, post_id = null}) {
+    return this.request({
+      method: 'POST',
+      path: '/image',
+      body: post_id === null ? {image} : {image, postId: post_id},
+      referer: '/publish/post',
+    });
+  }
+
+  /**
    * Lists subscribers. `query` is the whole request body — filters, sorting and free-text search
    * all live inside its `filters` object; see SubscriberQuery.js for how it is assembled.
    */
