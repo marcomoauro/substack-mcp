@@ -202,7 +202,14 @@ export async function readImageFileAsDataUri(filePath, {maxBytes = MAX_IMAGE_BYT
   const stats = await fsp.stat(resolved);
   if (!stats.isFile()) throw new Error(`image: not a regular file: ${filePath}`);
   // Refused on the size the filesystem reports, before the bytes are read — the local mirror of the
-  // Content-Length pre-check in `readCapped`.
+  // Content-Length pre-check in `readCapped`. Only that half is mirrored, and deliberately:
+  // `readCapped` re-checks the buffered length afterwards because Content-Length is a claim made by
+  // an untrusted remote server, which may declare a small length and send more. `stat.size` is the
+  // kernel's own answer about the file `realpath` just resolved, so there is no second party to
+  // disagree with. What remains is the window between this `stat` and the `readFile` below — a file
+  // that grows in between is read whole. Accepted residual, on the same terms as the DNS-rebinding
+  // note above: closing it would mean reading through a bounded stream, and the adversary it would
+  // buy protection from already has write access to this machine's disk.
   if (stats.size > maxBytes) {
     throw new Error(`image: file is ${stats.size} bytes, over the ${maxBytes}-byte limit.`);
   }

@@ -411,7 +411,12 @@ Three measured facts shape the tool:
     runs before the checks, so a symlink is followed to the file actually read and `..` cannot mean one
     thing at the check and another at the read.
   - **The size cap is enforced on `stat.size` before the file is read**, the local mirror of the
-    `Content-Length` pre-check in `readCapped`.
+    `Content-Length` pre-check in `readCapped` — and only that half of it, deliberately. `readCapped`
+    re-checks the buffered length afterwards because `Content-Length` is a claim by an untrusted
+    remote server; `stat.size` is the kernel's answer about the file `realpath` just resolved, with
+    no second party to disagree. The window between the `stat` and the `readFile` is an accepted
+    residual, on the same terms as the DNS-rebinding note: the adversary it would buy protection from
+    already has write access to the disk.
 
   Adding the second source meant editing **three** descriptions, and the third was nearly missed: the
   two property descriptions in the schema, *and* the tool's own `description` in the `tools` registry.
