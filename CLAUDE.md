@@ -377,7 +377,7 @@ the wrong *thing*, not for a header detail or a Cloudflare wall — the body is 
 `{id, url, contentType, bytes, imageWidth, imageHeight}`, `url` on `substack-post-media.s3.amazonaws.com`
 — the host every `image2.src` uses — and it renders through Substack's CDN (proven end to end on a real
 draft: upload → `captionedImage` → PUT → the editor shows a `substackcdn.com/image/fetch/…` render).
-Two measured facts shape the tool:
+Three measured facts shape the tool:
 - **Substack server-fetches only its own S3 bucket.** An external URL passed as `image` answers
   `400 "Failed to fetch image"`, so `upload_image` downloads the URL itself and re-encodes it. That
   download is where this server fetches a caller-chosen host, so it is guarded: `http(s)` only,
@@ -392,6 +392,42 @@ Two measured facts shape the tool:
   every request body at info, so a real upload would put hundreds of KB of base64 on one line;
   `src/logger.js` truncates a `data:…;base64,` value to its prefix and omitted length. A post body, being
   prose, is still logged in full — the two are different in kind.
+- **A local file is the other source, and nothing about the endpoint had to change to accept one.**
+  `upload_image` takes `path` as the alternative to `url` (`readImageFileAsDataUri`, the sibling of
+  `fetchImageAsDataUri` in the same module); the endpoint only ever wanted a data URI, so where the bytes
+  came from was never its business. Verified live 2026-08-09 with a real JPEG and PNG off disk — both
+  answered 200 with the S3 url and the true `1500x1000`. Three things this branch does *not* inherit
+  from the URL one, each deliberate:
+  - **The type comes from the magic bytes, never the extension.** A local file carries no
+    `Content-Type`, and the extension is the caller's claim rather than evidence: a PDF renamed `.png`
+    would otherwise reach Substack and come back as a 400 naming neither the file nor the reason. PNG,
+    JPEG, GIF and WebP are recognised; an ISO-BMFF `ftyp` box with a HEIC/HEIF brand gets the same
+    convert-first message the URL path gives. Written out rather than taken as a dependency — five
+    bounded signatures, the same argument `csv.js` makes. **SVG is refused** by that check
+    (`3c 73 76 67`), and whether `POST /api/v1/image` would accept `image/svg+xml` was never measured:
+    the dashboard builds its uploads from `canvas.toDataURL()`, which cannot produce one.
+  - **The path must be absolute.** A relative one resolves against *this server's* cwd, not the calling
+    client's, so it would read the wrong file or none — and neither failure would say why. `realpath`
+    runs before the checks, so a symlink is followed to the file actually read and `..` cannot mean one
+    thing at the check and another at the read.
+  - **The size cap is enforced on `stat.size` before the file is read**, the local mirror of the
+    `Content-Length` pre-check in `readCapped`.
+
+  Adding the second source meant editing **three** descriptions, and the third was nearly missed: the
+  two property descriptions in the schema, *and* the tool's own `description` in the `tools` registry.
+  That last one is what a model reads to choose **which** tool to call — the property descriptions are
+  only reached after it has already chosen — so a pitch that still said "from an http(s) URL" left
+  `path` present in the schema and invisible in the offer. That is exactly how a model concludes a
+  local file cannot be uploaded and reaches for the browser instead. `server.spec.js` now asserts the
+  pitch names both sources.
+
+  There is **no filesystem allowlist** — any absolute path the caller names is read. That was a
+  deliberate call, not an oversight: the env-var root was designed and dropped because a server that
+  needs configuring before `path` works at all is a server back where it started. Note what it means,
+  though — the caller is an LLM, so this is a read of an arbitrary local file whose bytes then leave for
+  Substack. `update_draft`'s `cover_image` deliberately does **not** take a path: the flow is
+  `upload_image({path})` → the S3 url → `update_draft({cover_image: <that url>})`, which recognises the
+  Substack host and writes it unchanged. Two doors onto one thing would be one too many.
 
 **The header token is verified now, and this is what closed it.** Every earlier live check ran on the
 browser session cookie, leaving `SUBSTACK_SESSION_TOKEN` in a header through `SubstackApi` as the

@@ -62,9 +62,12 @@ export const tools = {
   },
   upload_image: {
     description:
-      "Upload an image to your Substack publication from an http(s) URL. The server downloads " +
-      "the image and re-hosts it on Substack; the returned url is what goes into image2.src in " +
-      "set_post_body. Private and loopback hosts are refused, HEIC is not accepted, max 10 MB.",
+      "Host an image on your Substack publication and get back a Substack URL — the one thing " +
+      "image2.src in set_post_body and cover_image in update_draft will actually render. The " +
+      "source is either an http(s) URL, which the server downloads and re-hosts, or `path`, an " +
+      "absolute path to a local file on the machine running this server, which is read straight " +
+      "from disk: use that for an image you generated or edited locally, with no need to publish " +
+      "it anywhere first. Private and loopback hosts are refused, HEIC is not accepted, max 10 MB.",
     schema: uploadImageSchema,
     handler: uploadImageHandler,
   },
