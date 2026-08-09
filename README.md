@@ -149,24 +149,33 @@ Three things worth knowing:
 </details>
 
 <details>
-<summary><strong>upload_image</strong> - Re-host an external image on Substack</summary>
+<summary><strong>upload_image</strong> - Host an image on Substack, from a URL or a local file</summary>
 
 Substack's editor uploads images as base64 data URIs to `POST /api/v1/image`, which answers with a
-Substack-hosted URL. `image2.src` in `set_post_body` only renders such a URL, so this tool is the
-bridge: give it an http(s) image URL, it downloads the image, re-encodes it, uploads it, and returns
-the hosted URL. Substack itself only re-fetches URLs already in its own storage, so the download
-happens here rather than being handed off.
+Substack-hosted URL. `image2.src` in `set_post_body` and `cover_image` in `update_draft` only render
+such a URL, so this tool is the bridge. Substack itself only re-fetches URLs already in its own
+storage, so the image is encoded here rather than being handed off.
 
-**Inputs**:
-- `url` (string): the http(s) URL of an image to upload
+**Inputs** — exactly one of `url` or `path`:
+- `url` (string): the http(s) URL of an image to download and re-host
+- `path` (string): absolute path to an image file on the machine running this server, read straight
+  from disk with no download
 - `post_id` (number, optional): the post the image belongs to; its effect is unconfirmed
 
 **Returns**: `{id, url, content_type, bytes, width, height}` — put `url` into an `image2.src` when
-calling `set_post_body`.
+calling `set_post_body`, or into `cover_image` when calling `update_draft`.
 
-The download is guarded: only `http`/`https`, private and loopback hosts are refused after DNS
+A **download** is guarded: only `http`/`https`, private and loopback hosts are refused after DNS
 resolution (redirects are re-checked at every hop), the content type must be an image, HEIC is
 rejected with a note to convert it, and the image may not exceed 10 MB.
+
+A **local file** is guarded differently, because it has no `Content-Type` header to trust. The path
+must be absolute — a relative one would resolve against this server's working directory, not the
+calling client's — and the type is read from the file's magic bytes rather than its extension, so a
+non-image with an image extension is caught here instead of at Substack. PNG, JPEG, GIF and WebP are
+accepted; HEIC and SVG are not. The same 10 MB cap applies, checked against the file size before the
+file is read. Note that `path` reads whatever absolute path it is given: if that matters in your
+setup, do not expose this server to a client you would not trust with your filesystem.
 </details>
 
 <details>

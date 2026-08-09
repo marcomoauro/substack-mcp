@@ -94,13 +94,36 @@ describe('MCP server — list_tools', () => {
     assert.equal(inputSchema.properties.title.type, 'string');
   });
 
-  test('upload_image advertises url + optional post_id and forbids extra keys', async () => {
+  test('upload_image advertises url + path + optional post_id and forbids extra keys', async () => {
     const {inputSchema} = (await listToolsByName()).upload_image;
 
     assert.equal(inputSchema.type, 'object');
-    assert.deepEqual(Object.keys(inputSchema.properties).sort(), ['post_id', 'url']);
-    assert.deepEqual([...(inputSchema.required ?? [])], ['url']);
+    assert.deepEqual(Object.keys(inputSchema.properties).sort(), ['path', 'post_id', 'url']);
+    // Neither source is required on its own: the rule is exactly one of the two, and that is not
+    // expressible in `required`.
+    assert.deepEqual([...(inputSchema.required ?? [])], []);
     assert.equal(inputSchema.additionalProperties, false);
+  });
+
+  // The tool description is what a model reads when deciding WHICH tool to call; the property
+  // descriptions are only reached once it has already chosen this one. A description advertising
+  // only a URL leaves `path` discoverable in the schema but invisible in the pitch, which is how a
+  // model concludes a local file "cannot be uploaded" and reaches for the browser instead.
+  test('upload_image pitches both sources in its tool description', async () => {
+    const {description} = (await listToolsByName()).upload_image;
+
+    assert.match(description, /URL/);
+    assert.match(description, /local file/i);
+  });
+
+  // The `.superRefine` enforcing "exactly one of url or path" does NOT survive into the published
+  // JSON Schema — z.toJSONSchema drops refinements. The descriptions are therefore the only place a
+  // model can learn the rule before it breaks it, which makes them load-bearing rather than prose.
+  test('upload_image states the url/path exclusivity in both descriptions', async () => {
+    const {properties} = (await listToolsByName()).upload_image.inputSchema;
+
+    assert.match(properties.url.description, /exactly one of/i);
+    assert.match(properties.path.description, /exactly one of/i);
   });
 
   // Regression guard for the zod 3 -> 4 migration: zod-to-json-schema silently returned a

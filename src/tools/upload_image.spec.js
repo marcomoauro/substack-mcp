@@ -1,5 +1,8 @@
 import {test, describe, before, after, afterEach} from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import nodePath from 'node:path';
 import {http, HttpResponse} from 'msw';
 import {uploadImageHandler, uploadImageSchema, MAX_IMAGE_BYTES, isPrivateAddress} from './upload_image.js';
 import {createMswServer, IMAGE_URL, IMAGE_UPLOAD_RESPONSE} from '../../test/helpers/msw-server.js';
@@ -55,6 +58,100 @@ describe('uploadImageHandler — happy path', () => {
     await run({url: SOURCE, post_id: 7});
     const upload = msw.requests.find((r) => r.url.endsWith('/api/v1/image'));
     assert.equal(upload.body.postId, 7);
+  });
+});
+
+describe('uploadImageHandler — local file source', () => {
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32)]);
+  let dir;
+
+  before(async () => {
+    dir = await fs.mkdtemp(nodePath.join(os.tmpdir(), 'substack-mcp-upload-'));
+  });
+  after(async () => fs.rm(dir, {recursive: true, force: true}));
+
+  const writeFile = async (name, bytes) => {
+    const file = nodePath.join(dir, name);
+    await fs.writeFile(file, bytes);
+    return file;
+  };
+
+  test('reads a local file and uploads it as a data URI, with no outbound download', async () => {
+    const file = await writeFile('cover.png', PNG);
+    // No source handler is registered: MSW runs with onUnhandledRequest 'error', so any attempt to
+    // fetch a URL here would fail the test rather than pass silently.
+    const result = await run({path: file});
+
+    const upload = msw.requests.find((r) => r.url.endsWith('/api/v1/image'));
+    assert.equal(upload.body.image, `data:image/png;base64,${PNG.toString('base64')}`);
+    assert.equal(result.url, IMAGE_UPLOAD_RESPONSE.url);
+  });
+
+  test('forwards post_id for a local file too', async () => {
+    const file = await writeFile('with-post.png', PNG);
+    await run({path: file, post_id: 42});
+    const upload = msw.requests.find((r) => r.url.endsWith('/api/v1/image'));
+    assert.equal(upload.body.postId, 42);
+  });
+
+  test('does not upload when the file is not a recognised image', async () => {
+    const file = await writeFile('fake.png', Buffer.from('%PDF-1.4 not an image at all'));
+    await assert.rejects(run({path: file}), /unrecognised image format/);
+    assert.equal(msw.requests.find((r) => r.url.endsWith('/api/v1/image')), undefined);
+  });
+
+  // The intent line goes out BEFORE the read, so a failing read still leaves a record of which file
+  // was attempted — the mirror of `upload_image.fetching` on the URL branch. Size and type are only
+  // known afterwards and belong to `upload_image.uploading`, which both branches share.
+  test('logs which file it is about to read, then the size and type, never the base64', async () => {
+    const body = Buffer.concat([PNG, Buffer.alloc(5000, 0xab)]);
+    const file = await writeFile('logged.png', body);
+    const payload = body.toString('base64');
+
+    const logs = await captureLogs(() => run({path: file}));
+    const reading = logs.find((l) => l.msg === 'upload_image.reading');
+    const uploading = logs.find((l) => l.msg === 'upload_image.uploading');
+
+    assert.ok(reading, 'expected an upload_image.reading line');
+    assert.equal(reading.path, file);
+    assert.equal(uploading.bytes, body.byteLength);
+    assert.equal(uploading.content_type, 'image/png');
+    // Not the tool's line, not the API layer's request line either.
+    assert.equal(JSON.stringify(logs).includes(payload), false);
+    assert.ok(logs.some((l) => l.msg === 'substack.request'));
+  });
+
+  test('logs the attempted path even when the read fails', async () => {
+    const missing = nodePath.join(dir, 'gone.png');
+    const logs = await captureLogs(() => run({path: missing}).catch(() => {}));
+    const reading = logs.find((l) => l.msg === 'upload_image.reading');
+
+    assert.equal(reading?.path, missing);
+  });
+});
+
+// A `.refine()` does not survive into the published JSON Schema, so the rule is also stated in both
+// descriptions. These pin the runtime half of that pair.
+describe('uploadImageSchema — url and path are exclusive', () => {
+  test('rejects a call with neither', () => {
+    assert.throws(() => uploadImageSchema.parse({}), /exactly one of/);
+  });
+
+  test('rejects a call with both', () => {
+    assert.throws(
+      () => uploadImageSchema.parse({url: 'https://example.com/a.png', path: '/tmp/a.png'}),
+      /exactly one of/
+    );
+  });
+
+  test('accepts either one alone', () => {
+    assert.doesNotThrow(() => uploadImageSchema.parse({url: 'https://example.com/a.png'}));
+    assert.doesNotThrow(() => uploadImageSchema.parse({path: '/tmp/a.png'}));
+  });
+
+  // strictObject still has to report an unknown key — the only repair signal an LLM gets.
+  test('still reports an unrecognised key', () => {
+    assert.throws(() => uploadImageSchema.parse({file: '/tmp/a.png'}), /Unrecognized key/);
   });
 });
 
