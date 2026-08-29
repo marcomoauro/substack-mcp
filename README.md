@@ -68,10 +68,9 @@ Ask your client:
 The client should call `list_posts` with `status: "drafts"`. If it fails, check the client's MCP
 logs and the [logging section](#-logs) below before opening an issue.
 
-<details>
-<summary><strong>Use Docker instead of Node.js</strong></summary>
+### Docker quick start
 
-With Docker installed, use this server configuration:
+To use the published Docker image instead of Node.js, add this server configuration:
 
 ```json
 {
@@ -94,8 +93,6 @@ With Docker installed, use this server configuration:
   }
 }
 ```
-
-</details>
 
 ## 🛠 Available Tools
 
@@ -637,7 +634,7 @@ Then add to your MCP config:
 }
 ```
 
-### Docker
+### Docker (build from source)
 
 ```bash
 git clone https://github.com/marcomoauro/substack-mcp.git
