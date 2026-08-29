@@ -6,12 +6,11 @@ on:
     tags: [ 'v*' ]
 
 jobs:
-  build-and-publish:
-    name: Build and Publish
+  publish-npm:
+    name: Publish to npm
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
 
     steps:
       - name: Checkout code
@@ -21,26 +20,70 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
-      
+
       - name: Run publish script
         run: ./ops/publish-npm.sh
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  publish-registry:
+    name: Publish MCP Registry metadata
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
       - name: Prepare MCP Registry metadata
         run: |
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PACKAGE_VERSION=$(jq -r '.version' package.json)
           jq --arg version "$PACKAGE_VERSION" \
-            '.version = $version | .packages[].version = $version' \
+            '.version = $version
+            | (.packages[] | select(.registryType == "npm").version) = $version
+            | (.packages[] | select(.registryType == "oci").identifier) = "docker.io/marcomoauro/substack-mcp:v\($version)"' \
             server.json > "$RUNNER_TEMP/server.json"
+
+      - name: Wait for the versioned Docker image
+        env:
+          MCP_SERVER_NAME: io.github.marcomoauro/substack-mcp
+        run: |
+          PACKAGE_VERSION=$(jq -r '.version' package.json)
+          IMAGE="docker.io/marcomoauro/substack-mcp:v${PACKAGE_VERSION}"
+
+          for attempt in $(seq 1 30); do
+            if docker pull "$IMAGE" >/dev/null 2>&1; then
+              LABEL=$(docker inspect --format '{{ index .Config.Labels "io.modelcontextprotocol.server.name" }}' "$IMAGE")
+              if [ "$LABEL" = "$MCP_SERVER_NAME" ]; then
+                echo "$IMAGE is available with the required ownership label"
+                exit 0
+              fi
+            fi
+
+            if [ "$attempt" -lt 30 ]; then
+              echo "Waiting for $IMAGE (attempt $attempt/30)"
+              sleep 10
+            fi
+          done
+
+          echo "Error: $IMAGE was not published with ownership label $MCP_SERVER_NAME"
+          exit 1
 
       - name: Install MCP Registry publisher
         env:
           MCP_PUBLISHER_VERSION: 1.8.1
         run: |
-          curl -fsSL \
-            "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" \
-            | tar xz -C "$RUNNER_TEMP" mcp-publisher
+          ARCHIVE=mcp-publisher_linux_amd64.tar.gz
+          RELEASE_URL="https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}"
+
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$RELEASE_URL/$ARCHIVE"
+          curl -fsSL "$RELEASE_URL/registry_${MCP_PUBLISHER_VERSION}_checksums.txt" -o checksums.txt
+          awk -v file="$ARCHIVE" '$2 == file' checksums.txt | sha256sum --check -
+          tar xzf "$ARCHIVE" mcp-publisher
 
       - name: Authenticate to the MCP Registry
         run: |

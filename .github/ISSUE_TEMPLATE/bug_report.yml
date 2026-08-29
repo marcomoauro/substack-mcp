@@ -36,8 +36,6 @@ body:
       label: MCP client
       description: Include the client version when possible.
       placeholder: Claude Desktop 1.x, Cursor 1.x, VS Code 1.x, etc.
-    validations:
-      required: true
 
   - type: input
     id: environment
@@ -45,8 +43,6 @@ body:
       label: Operating system and runtime
       description: Include your OS and, for NPX or source installs, the output of `node --version`.
       placeholder: macOS 15.6, Node.js v22.18.0
-    validations:
-      required: true
 
   - type: textarea
     id: reproduction
@@ -64,8 +60,6 @@ body:
     id: expected
     attributes:
       label: Expected behavior
-    validations:
-      required: true
 
   - type: textarea
     id: logs

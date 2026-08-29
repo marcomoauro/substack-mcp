@@ -24,11 +24,13 @@ Sign in to Substack in your browser and open your publication dashboard. You nee
 - **Publication URL** — the full base URL of your publication, for example
   `https://your-publication.substack.com`.
 - **Session token** — open your browser's developer tools, select **Network**, filter to
-  **Fetch/XHR**, and reload the dashboard. Open a request whose name starts with `drafts?offset=`.
-  Under **Request Headers**, find the `Cookie` header and copy only the value of `substack.sid` or
-  `connect.sid` (only one is normally present), without the cookie name or the rest of the header.
-- **User ID** — in the same Network panel, open the `publication_user` request. In its JSON response,
-  copy the numeric `id` inside the `user` object.
+  **Fetch/XHR**, and reload the dashboard. Open a successful authenticated request to your
+  publication. Under **Request Headers**, find the `Cookie` header and locate a session cookie named
+  `substack.sid` or `connect.sid`. Copy its value without the cookie name or the rest of the header.
+  If both names appear with different values, test them separately and locally with the read-only
+  verification in step 3; never paste either value into an issue.
+- **User ID** — in the same Network panel, search for a successful `publication_user` request. In
+  its JSON response, copy the numeric `id` inside the `user` object.
 
 If the browser UI differs, the illustrated [credential guide](https://implementing.substack.com/p/mcp-server-for-substack)
 shows the same requests. If authentication later stops working, sign in again and repeat these steps
