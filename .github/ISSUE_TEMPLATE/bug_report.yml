@@ -1,0 +1,83 @@
+name: Bug report
+description: Report something that is not working as expected
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Substack MCP. Never paste your session token or a complete Cookie header into an issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: Substack MCP version
+      description: Run `npm view substack-mcp version` or provide the Docker image tag you use.
+      placeholder: 1.3.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - NPX
+        - Docker
+        - From source
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      description: Include the client version when possible.
+      placeholder: Claude Desktop 1.x, Cursor 1.x, VS Code 1.x, etc.
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and runtime
+      description: Include your OS and, for NPX or source installs, the output of `node --version`.
+      placeholder: macOS 15.6, Node.js v22.18.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Tell us which tool was called, with which non-secret inputs, and what happened.
+      placeholder: |
+        1. Configure the server using NPX
+        2. Ask the client to list recent drafts
+        3. The call fails with ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Paste the relevant JSON log lines. Remove tokens, cookies, email addresses, post content, and other private data first.
+      render: shell
+
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: Security check
+      options:
+        - label: I removed session tokens, Cookie headers, email addresses, and other private data from this report.
+          required: true

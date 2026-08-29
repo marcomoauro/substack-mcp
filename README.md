@@ -5,6 +5,96 @@ A Model Context Protocol (MCP) Server for [Substack](https://substack.com) enabl
 [![Docker Pulls](https://img.shields.io/docker/pulls/marcomoauro/substack-mcp.svg)](https://hub.docker.com/r/marcomoauro/substack-mcp)
 [![npm downloads](https://img.shields.io/npm/dm/substack-mcp.svg)](https://www.npmjs.com/package/substack-mcp)
 
+Create and publish posts, work with subscribers and analytics, browse your reader feeds, manage
+tags and comments, and upload images — 27 tools exposed through one MCP server.
+
+> [!IMPORTANT]
+> Substack does not provide a public API for these operations. This server uses your authenticated
+> web session. Treat the session token exactly like a password: keep it local, never commit it, and
+> never include it or a complete Cookie header in a bug report.
+
+## Quick start
+
+The fastest installation uses [Node.js 22 or newer](https://nodejs.org/) and `npx`.
+
+### 1. Collect your Substack credentials
+
+Sign in to Substack in your browser and open your publication dashboard. You need three values:
+
+- **Publication URL** — the full base URL of your publication, for example
+  `https://your-publication.substack.com`.
+- **Session token** — open your browser's developer tools, select **Network**, filter to
+  **Fetch/XHR**, and reload the dashboard. Open a request whose name starts with `drafts?offset=`.
+  Under **Request Headers**, find the `Cookie` header and copy only the value of `substack.sid` or
+  `connect.sid` (only one is normally present), without the cookie name or the rest of the header.
+- **User ID** — in the same Network panel, open the `publication_user` request. In its JSON response,
+  copy the numeric `id` inside the `user` object.
+
+If the browser UI differs, the illustrated [credential guide](https://implementing.substack.com/p/mcp-server-for-substack)
+shows the same requests. If authentication later stops working, sign in again and repeat these steps
+to obtain the current token.
+
+### 2. Add the server to your MCP client
+
+For clients that accept MCP JSON configuration, add:
+
+```json
+{
+  "mcpServers": {
+    "substack": {
+      "command": "npx",
+      "args": ["-y", "substack-mcp@latest"],
+      "env": {
+        "SUBSTACK_PUBLICATION_URL": "https://your-publication.substack.com",
+        "SUBSTACK_SESSION_TOKEN": "your-session-token",
+        "SUBSTACK_USER_ID": "your-user-id"
+      }
+    }
+  }
+}
+```
+
+Replace the three example values, save the configuration, and restart your MCP client. Consult your
+client's documentation if it uses a different configuration format.
+
+### 3. Verify the connection
+
+Ask your client:
+
+> List my five most recent Substack drafts.
+
+The client should call `list_posts` with `status: "drafts"`. If it fails, check the client's MCP
+logs and the [logging section](#-logs) below before opening an issue.
+
+<details>
+<summary><strong>Use Docker instead of Node.js</strong></summary>
+
+With Docker installed, use this server configuration:
+
+```json
+{
+  "mcpServers": {
+    "substack": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "SUBSTACK_PUBLICATION_URL",
+        "-e", "SUBSTACK_SESSION_TOKEN",
+        "-e", "SUBSTACK_USER_ID",
+        "marcomoauro/substack-mcp:latest"
+      ],
+      "env": {
+        "SUBSTACK_PUBLICATION_URL": "https://your-publication.substack.com",
+        "SUBSTACK_SESSION_TOKEN": "your-session-token",
+        "SUBSTACK_USER_ID": "your-user-id"
+      }
+    }
+  }
+}
+```
+
+</details>
+
 ## 🛠 Available Tools
 
 <details>
@@ -514,86 +604,17 @@ accept, rather than dropping it silently.
 > broken upstream rather than mis-called.
 </details>
 
-### 📋 Requirements
-
-- Substack tokens, follow my [guide](https://implementing.substack.com/p/mcp-server-for-substack) to obtain them:
-    - Session token
-    - Publication URL
-    - User ID
-- An LLM client that supports Model Context Protocol (MCP), such as Claude Desktop, Cursors, or GitHub Copilot
-- Docker
-
-### 🔌 Installation
-
-#### Introduction
-The installation process is standardized across all MCP clients. It involves manually adding a configuration object to your client's MCP configuration JSON file.
-> If you're unsure how to configure an MCP with your client, please refer to your MCP client's official documentation.
-
-#### 🧩 Engines
-
-<summary><strong>Option 1: Using NPX</strong></summary>
-
-This option requires Node.js 22 or newer to be installed on your system.
-
-1. Add the following to your MCP configuration file:
-```json
-{
-  "mcpServers": {
-    "substack-api": {
-      "command": "npx",
-      "args": ["-y", "substack-mcp@latest"],
-      "env": {
-        "SUBSTACK_PUBLICATION_URL": "<YOUR_PUBLICATION_URL>",
-        "SUBSTACK_SESSION_TOKEN": "<YOUR_SESSION_TOKEN>",
-        "SUBSTACK_USER_ID": "<YOUR_USER_ID>"
-      }
-    }
-  }
-}
-```
-
-2. Replace `<SUBSTACK_PUBLICATION_URL>`, `<YOUR_SESSION_TOKEN>` and `<YOUR_USER_ID>` with your credentials.
-
-<summary><strong>Option 2: Using Docker</strong></summary>
-
-This option requires Docker to be installed on your system.
-
-1. Add the following to your MCP configuration file:
-```json
-{
-  "mcpServers": {
-    "substack-api": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-e", "SUBSTACK_PUBLICATION_URL",
-        "-e", "SUBSTACK_SESSION_TOKEN",
-        "-e", "SUBSTACK_USER_ID",
-        "marcomoauro/substack-mcp:latest"
-      ],
-      "env": {
-        "SUBSTACK_PUBLICATION_URL": "<YOUR_PUBLICATION_URL>",
-        "SUBSTACK_SESSION_TOKEN": "<YOUR_SESSION_TOKEN>",
-        "SUBSTACK_USER_ID": "<YOUR_USER_ID>"
-      }
-    }
-  }
-}
-```
-
-2. Replace `<SUBSTACK_PUBLICATION_URL>`, `<YOUR_SESSION_TOKEN>` and `<YOUR_USER_ID>` with your credentials.
-
-### 🏗 Running from Source
+## 🏗 Running from Source
 
 Use this if you want to hack on the server itself. There is no build step — the sources are plain
 ESM and run as they are.
 
-#### Node.js
+### Node.js
 
 ```bash
 git clone https://github.com/marcomoauro/substack-mcp.git
 cd substack-mcp
-npm install
+npm ci
 ```
 
 Then add to your MCP config:
@@ -614,7 +635,7 @@ Then add to your MCP config:
 }
 ```
 
-#### Docker
+### Docker
 
 ```bash
 git clone https://github.com/marcomoauro/substack-mcp.git
@@ -646,7 +667,7 @@ Then add to your MCP config:
 }
 ```
 
-### 🪵 Logs
+## 🪵 Logs
 
 The server logs what it does as one JSON object per line, on **stderr** — MCP clients collect it
 into their own log file (on macOS, Claude Desktop writes it to
@@ -672,7 +693,7 @@ is written:
 
 Your session token is never written to the log, at any level.
 
-## 💻 Popular Clients that supports MCPs
+## 💻 Popular MCP clients
 
 > For a complete list of MCP clients and their feature support, visit the [official MCP clients page](https://modelcontextprotocol.io/clients).
 

@@ -9,6 +9,9 @@ jobs:
   build-and-publish:
     name: Build and Publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout code
@@ -22,4 +25,27 @@ jobs:
       - name: Run publish script
         run: ./ops/publish-npm.sh
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }} 
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Prepare MCP Registry metadata
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          jq --arg version "$PACKAGE_VERSION" \
+            '.version = $version | .packages[].version = $version' \
+            server.json > "$RUNNER_TEMP/server.json"
+
+      - name: Install MCP Registry publisher
+        env:
+          MCP_PUBLISHER_VERSION: 1.8.1
+        run: |
+          curl -fsSL \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz -C "$RUNNER_TEMP" mcp-publisher
+
+      - name: Authenticate to the MCP Registry
+        run: |
+          "$RUNNER_TEMP/mcp-publisher" login github-oidc
+
+      - name: Publish to the MCP Registry
+        run: |
+          "$RUNNER_TEMP/mcp-publisher" publish "$RUNNER_TEMP/server.json"
