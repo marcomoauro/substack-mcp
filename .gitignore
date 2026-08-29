@@ -6,6 +6,7 @@ coverage/
 docs/index.html
 docs/openapi*.json
 .cache/
+.worktrees/
 .DS_Store
 /npm-debug.log*
 .env*
