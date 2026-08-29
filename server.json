@@ -1,0 +1,75 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.marcomoauro/substack-mcp",
+  "title": "Substack MCP Server",
+  "description": "Manage Substack publishing, subscribers, analytics, reader feeds, comments, and images through MCP.",
+  "repository": {
+    "url": "https://github.com/marcomoauro/substack-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://implementing.substack.com/p/mcp-server-for-substack",
+  "version": "1.3.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "substack-mcp",
+      "version": "1.3.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SUBSTACK_PUBLICATION_URL",
+          "description": "Full URL of your Substack publication, including https://",
+          "placeholder": "https://your-publication.substack.com",
+          "isRequired": true,
+          "isSecret": false
+        },
+        {
+          "name": "SUBSTACK_SESSION_TOKEN",
+          "description": "Value of the substack.sid or connect.sid cookie from your authenticated Substack session",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "SUBSTACK_USER_ID",
+          "description": "Numeric user ID returned by Substack's publication_user request",
+          "placeholder": "123456789",
+          "isRequired": true,
+          "isSecret": false
+        }
+      ]
+    },
+    {
+      "registryType": "oci",
+      "identifier": "docker.io/marcomoauro/substack-mcp:v1.3.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SUBSTACK_PUBLICATION_URL",
+          "description": "Full URL of your Substack publication, including https://",
+          "placeholder": "https://your-publication.substack.com",
+          "isRequired": true,
+          "isSecret": false
+        },
+        {
+          "name": "SUBSTACK_SESSION_TOKEN",
+          "description": "Value of the substack.sid or connect.sid cookie from your authenticated Substack session",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "SUBSTACK_USER_ID",
+          "description": "Numeric user ID returned by Substack's publication_user request",
+          "placeholder": "123456789",
+          "isRequired": true,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

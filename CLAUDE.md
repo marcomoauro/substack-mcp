@@ -39,6 +39,22 @@ noisier, tally `# pass`, failures `not ok`. Grep for both, or a perfectly green 
 version comes back empty and reads as a broken command: `grep -E '^(#|ℹ) (tests|pass|fail)'` for
 the tally, `grep -E '^(not ok|✖)'` for what broke.
 
+## Distribution and releases
+
+Release tags publish three artifacts: the npm package through `.github/workflows/npm-publish.yml`,
+the multi-architecture Docker image through `.github/workflows/docker-build-push.yml`, and metadata
+for both installation methods to the official MCP Registry. The registry job is separate from the
+npm job so a registry failure can be rerun without attempting to publish the same immutable npm
+version twice. It waits for the independently built versioned Docker image before publishing the
+combined metadata.
+
+`package.json`'s `mcpName` and the Dockerfile label
+`io.modelcontextprotocol.server.name` are ownership proofs. Both must equal
+`io.github.marcomoauro/substack-mcp`; removing either makes the corresponding package fail registry
+publication. `server.json` is the source metadata, but its checked-in version is not a second release
+version to bump by hand: the registry job derives the top-level version, the npm package version and
+the `v<version>` Docker identifier from `package.json` before publishing.
+
 ## Layout
 
 - `src/index.js` — entrypoint only: env check, `createServer()`, stdio transport. Keep it thin.
