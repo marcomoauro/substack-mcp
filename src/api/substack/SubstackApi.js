@@ -42,7 +42,15 @@ export default class SubstackApi {
         body,
       });
 
-      throw new Error(`SubstackAPIException: ${response.status} ${response.statusText}`);
+      // The message carries only the status, which is all a caller ever saw: issue #25 surfaced as
+      // a bare "400 Bad Request" that named neither the failing step nor Substack's own
+      // explanation. The status and body ride along so a caller can tell one 400 from another
+      // without re-reading the log.
+      const error = new Error(`SubstackAPIException: ${response.status} ${response.statusText}`);
+      error.status = response.status;
+      error.body = body;
+
+      throw error;
     }
 
     return response.text();
@@ -504,15 +512,34 @@ export default class SubstackApi {
   }
 
   /**
-   * Polls one export. Answers `{url}` once the file is ready; the url is absent while it is still
-   * being generated.
+   * Polls one export. Answers `{url}` once the file is ready and `{pending: true}` while Substack
+   * is still generating it.
+   *
+   * **The pending state is a 400, not a 200 with an absent url**, which is the opposite of what
+   * every other endpoint here does and is why this method exists rather than the caller polling
+   * `request` directly. Measured live 2026-09-03 on a 6-row export: ~3s of
+   * `400 {"error":"Export not ready","type":"single"}`, then `200 {url}`. A 200 without a url was
+   * never observed at any point — the earlier reading of this endpoint had it backwards, and since
+   * the tool's first poll is immediate, every export aborted on its first request (issue #25).
+   *
+   * Only that one body is a state. Any other refusal still throws: an export that will never
+   * arrive has to fail now rather than poll until the caller's wait budget runs out.
    */
   async getSubscriberSetExport(export_id) {
-    return this.request({
-      method: 'GET',
-      path: `/subscriber_set/export/${export_id}`,
-      referer: '/publish/subscribers',
-    });
+    try {
+      return await this.request({
+        method: 'GET',
+        path: `/subscriber_set/export/${export_id}`,
+        referer: '/publish/subscribers',
+      });
+    } catch (error) {
+      if (error.status === 400 && /Export not ready/i.test(error.body ?? '')) {
+        logger.debug('substack.export.pending', {export_id});
+        return {pending: true};
+      }
+
+      throw error;
+    }
   }
 
   /**

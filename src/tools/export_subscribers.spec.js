@@ -260,6 +260,35 @@ describe('exportSubscribersHandler — polling', () => {
     assert.deepEqual(clock.slept, [EXPORT_POLL_BACKOFF_SECONDS[0], EXPORT_POLL_BACKOFF_SECONDS[1]]);
   });
 
+  // Issue #25: the live pending state is a 400, and the first poll is immediate, so every export
+  // hit it and aborted before the file was ever ready. Verified against the real API on
+  // 2026-09-03: ~3s of 400 {"error":"Export not ready"}, then 200 {url}.
+  test('keeps polling through the 400 the live API answers while the file is generating', async () => {
+    msw.server.use(msw.exportStatusHandler((exportId, attempt) =>
+      attempt < 3
+        ? HttpResponse.json({error: 'Export not ready', type: 'single'}, {status: 400})
+        : HttpResponse.json({url: EXPORT_FILE_PATH}, {status: 200})
+    ));
+
+    const clock = fakeClock();
+    const result = await run({}, clock);
+
+    assert.equal(result.count, 2);
+    assert.deepEqual(clock.slept, [EXPORT_POLL_BACKOFF_SECONDS[0], EXPORT_POLL_BACKOFF_SECONDS[1]]);
+  });
+
+  // A 400 that is not the pending state means the export will never arrive, so polling it to the
+  // end of the wait budget would replace a clear refusal with a slow timeout.
+  test('aborts on a 400 that is not the pending state', async () => {
+    msw.server.use(msw.exportStatusHandler(() =>
+      HttpResponse.json({error: 'Subscriber set not found', type: 'single'}, {status: 400})
+    ));
+
+    const error = await run({}, fakeClock()).catch((e) => e);
+
+    assert.match(error.message, /^SubstackAPIException: 400\b/);
+  });
+
   test('follows the documented backoff rather than a fixed interval', async () => {
     assert.deepEqual(EXPORT_POLL_BACKOFF_SECONDS.slice(0, 4), [1, 5, 10, 30]);
     assert.equal(EXPORT_POLL_BACKOFF_SECONDS.at(-1), 60);
