@@ -194,16 +194,18 @@ describe('exportSubscribersHandler — parsing the CSV back', () => {
     assert.deepEqual(result.columns, [
       'user_email_address', 'user_name', 'subscription_created_at',
       'num_email_opens_last_30d', 'num_web_post_views', 'total_revenue_generated',
-      'activity_rating', 'country',
+      'activity_rating', 'country', 'group_membership',
     ]);
   });
 
-  // Verified against the live API: asking for all 48 returns 46. `group_membership` and `tag_ids`
-  // are dropped with no error at all, so a caller told only "success" would believe it had them.
+  // Measured against the live API 2026-09-03: asking for all 48 returns 47, and the only column
+  // that never comes back is `tag_ids`. It is dropped with no error at all, so a caller told only
+  // "success" would believe it had the tags. `group_membership` exports fine — this test and the
+  // CSV fixture both used to claim otherwise.
   test('names the requested columns that never came back', async () => {
-    const result = await run({columns: ['user_email_address', 'user_name', 'tag_ids', 'group_membership']});
+    const result = await run({columns: ['user_email_address', 'tag_ids', 'group_membership']});
 
-    assert.deepEqual(result.missing_columns, ['tag_ids', 'group_membership']);
+    assert.deepEqual(result.missing_columns, ['tag_ids']);
   });
 
   test('missing_columns is empty when everything asked for arrived', async () => {
@@ -389,7 +391,8 @@ describe('exportSubscribersHandler — logging', () => {
 
     const done = find(lines, 'export_subscribers.done');
     assert.equal(done.count, 2);
-    assert.equal(done.columns, 8);
+    // The nine headers EXPORT_CSV carries, not the number requested.
+    assert.equal(done.columns, 9);
   });
 
   test('records each poll that found the export unfinished', async () => {

@@ -93,8 +93,8 @@ export const tools = {
       "seen, post views, unique posts seen, comments, shares, links clicked, days active and " +
       "activity rating. Takes the same filters as list_subscribers and covers the whole matching " +
       "set — there is no paging. Substack generates the file asynchronously, so this waits for it " +
-      "and returns the parsed records. Two columns cannot be exported and are reported in " +
-      "`missing_columns` rather than failing: tag_ids and group_membership.",
+      "and returns the parsed records. One column cannot be exported and is reported in " +
+      "`missing_columns` rather than failing: tag_ids.",
     schema: exportSubscribersSchema,
     handler: exportSubscribersHandler,
   },

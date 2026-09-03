@@ -165,8 +165,11 @@ export const exportSubscribersHandler = async (args, {sleep = sleepSeconds} = {}
   const csv = await substack_api.downloadExport(url);
   const {columns: returned, unmapped, subscribers} = recordsFromCsv(csv);
 
-  // Unsupported columns are dropped by the API with no error at all — `group_membership` and
-  // `tag_ids` never come back. Reporting the difference is the only way the caller learns it.
+  // An unsupported column is dropped by the API with no error at all — `tag_ids` never comes back.
+  // Reporting the difference is the only way the caller learns it. The check stays a diff rather
+  // than a hardcoded list of one: which columns the export refuses is not ours to know statically.
+  // `group_membership` was recorded here as undeliverable and measurably is not — whether Substack
+  // changed or the original reading was wrong cannot be told apart now, which is the argument.
   const missing_columns = columns.filter((column) => !returned.includes(column));
 
   if (missing_columns.length > 0) {

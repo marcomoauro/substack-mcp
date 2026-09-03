@@ -143,9 +143,15 @@ face value:
   unique, which `SubscriberQuery.spec.js` asserts by entry count so a future collision fails loudly
   instead of dropping a column.
 - **The server chooses the column order**, not the caller. Parse by header name, never by position.
-- **Two columns cannot be exported and are dropped in silence:** `tag_ids` and `group_membership`.
-  Asking for all 48 returns 46 with no error, so the tool diffs what it asked for against the header
-  and reports `missing_columns`. This is the same silent-drop hazard as `columnView`.
+- **One column cannot be exported and is dropped in silence:** `tag_ids`. Asking for all 48 returns
+  **47** with no error, so the tool diffs what it asked for against the header and reports
+  `missing_columns`. This is the same silent-drop hazard as `columnView`. This file said *two*
+  columns until 2026-09-03 and named `group_membership` as the second; measured that day, all 48
+  came back as 47 and `group_membership` carried the value `None`. Whether Substack changed or the
+  original reading was wrong cannot be told apart after the fact — which is why the tool diffs the
+  header instead of carrying a list of undeliverable columns, and why the count above is the part
+  to distrust first. The suite's CSV fixture omitted that header, so the error had a test agreeing
+  with it: the same shape as the pending-poll mock above.
 - **The download url is relative to the publication host and cookie-authenticated** (403 without it,
   not pre-signed) and answers **CSV, not JSON**. `handleResponse` unconditionally `JSON.parse`s, so
   `readBody` was split out of it and `requestUrl({parse: 'text'})` is the raw path. `requestUrl` also

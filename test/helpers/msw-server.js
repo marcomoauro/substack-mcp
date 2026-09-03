@@ -42,11 +42,16 @@ export const EXPORT_FILE_URL = `${TEST_ENV.SUBSTACK_PUBLICATION_URL}${EXPORT_FIL
  * A CSV shaped exactly like a real export: the header carries human LABELS rather than column keys,
  * the server's own column order (not the requested one), a quoted currency value instead of a
  * number, and a name containing a comma — the case a `split(',')` gets wrong.
+ *
+ * `Group membership` is in the header because the live API returns it: measured 2026-09-03, all 48
+ * columns requested came back as 47 with only `tag_ids` missing, and the value is the word "None"
+ * rather than an empty cell. This fixture omitted the header, which is how the repo came to claim
+ * the column was undeliverable and had a passing test to prove it.
  */
 export const EXPORT_CSV = [
-  'Email,Name,Start date,Emails opened (30d),Post views,Revenue,Activity,Country',
-  'one@example.com,One,2026-07-29T22:07:50.299Z,2,1,"€0.00",5,BR',
-  'two@example.com,"Two, Junior",2026-06-01T10:00:00.000Z,0,7,"€50.00",3,IT',
+  'Email,Name,Start date,Emails opened (30d),Post views,Revenue,Activity,Country,Group membership',
+  'one@example.com,One,2026-07-29T22:07:50.299Z,2,1,"€0.00",5,BR,None',
+  'two@example.com,"Two, Junior",2026-06-01T10:00:00.000Z,0,7,"€50.00",3,IT,None',
 ].join('\n');
 
 export const DRAFT_RESPONSE = {
