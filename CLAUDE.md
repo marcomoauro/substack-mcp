@@ -119,8 +119,24 @@ GET  <url>                                                                  → 
 ```
 
 Verified end to end. The dashboard's polling backoff is `1, 5, 10, 30`, then `60` repeated;
-`EXPORT_POLL_BACKOFF_SECONDS` mirrors it, except the first poll happens immediately because a small
-export is usually already done. Four things this flow gets wrong if taken at face value:
+`EXPORT_POLL_BACKOFF_SECONDS` mirrors it, and the first poll happens immediately — which is free
+now but was not always: see the pending state below. Five things this flow gets wrong if taken at
+face value:
+
+- **The pending poll is a `400`, not a 200 with an absent `url`.** While the file is generating,
+  `GET /subscriber_set/export/<id>` answers `400 {"error":"Export not ready","type":"single"}`;
+  a 200 without a `url` was **never observed at any point**. Measured 2026-09-03 at 250ms
+  intervals: ~3s of 400s on a *6-row* export, then `200 {"url": "…/file"}`. This file previously
+  claimed the opposite, and the cost of that was total: since the first poll is immediate, every
+  export aborted on its first request with a bare `400 Bad Request` (issue #25). Note what made it
+  invisible — the suite mocked the pending state as `200 {}`, so 748 tests stayed green while the
+  tool failed 100% of the time in production. **A mock of a state nobody has observed is an
+  assumption wearing a test's clothes.** `SubstackApi.getSubscriberSetExport` now translates that
+  one body into `{pending: true}` and rethrows every other 400, so the tool's loop is unchanged —
+  an absent `url` still means retry, which costs nothing and covers the state if it ever exists.
+  This is also why `readBody` attaches `status` and `body` to the error it throws: the message
+  carries only the status, so the body explaining the refusal was readable in the log and nowhere
+  else, and no caller could tell one 400 from another.
 
 - **The CSV header carries human LABELS, not column keys** — `Emails opened (6mo)`, not
   `num_email_opens`. `COLUMN_KEY_BY_LABEL` is the reverse map; it works because the labels are
@@ -553,6 +569,27 @@ a logging assertion. **Check the mutation actually landed** before trusting a gr
 `sed`/`perl` regex that fails to match leaves the file untouched and reads exactly like a test
 that asserts nothing. Grep the file for a marker first. The whole suite runs in well under a
 second, so a mutation costs nothing.
+
+**A fixture that represents an API *state* must cite where that state was observed** — a date, a
+captured log line — and anything not observed has to say so. The mocks are written by us, so the
+suite measures this repo's model of Substack and never Substack; a bug of the form "the API does
+something we have not seen" is *structurally invisible* to it, however thorough it is. Issue #25
+is the demonstration: the export's pending state was mocked as `200 {}`, the real state is a
+`400`, and no assertion over that mock could have failed because it described the wrong universe.
+Note which mocks are exposed. A happy-path fixture is corrected by real use sooner or later; a
+fixture for a **transient or error** state is corrected by nobody, because nothing exercises it
+until something exercises it constantly. Suspect those first.
+
+**Verify a time-dependent flow by running the real handler, never by hand.** Polling, retry,
+backoff, TTL and expiry all mean the code and a human occupy different timing regimes: hand-issued
+requests land seconds apart, `export_subscribers` polls 200ms after asking for the file, and the
+window it lands in is ~3s wide. A manual walk through the endpoints cannot enter that window and
+the code cannot avoid it, so curl-by-curl "verified end to end" is not a verification of the same
+program. The technique that works is already in this file — the token check drove
+`create_draft_post` → `update_draft` → `get_draft` → `delete_draft` **through the real handlers**
+with `SUBSTACK_MCP_LOG_LEVEL=debug` and read the log. Do that once per tool whose flow is
+multi-step or timed, and keep the log: it is the only check that can contradict an assumption
+rather than confirm it.
 
 ## Style
 

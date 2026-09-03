@@ -328,6 +328,45 @@ describe('SubstackApi — subscriber set and export', () => {
     assert.equal(new URL(msw.requests[0].url).pathname, `/api/v1/subscriber_set/export/${EXPORT_ID}`);
   });
 
+  // Measured live 2026-09-03: while Substack is still generating the file the poll answers
+  // 400 {"error":"Export not ready"} — NOT a 200 with an absent url. It stayed there for ~3s on a
+  // 6-row export. Reported as issue #25, where it aborted every single export.
+  test('getSubscriberSetExport reports a not-ready export as pending instead of throwing', async () => {
+    msw.server.use(msw.exportStatusHandler(() =>
+      HttpResponse.json({error: 'Export not ready', type: 'single'}, {status: 400})
+    ));
+
+    const result = await createApi().getSubscriberSetExport(EXPORT_ID);
+
+    assert.deepEqual(result, {pending: true});
+  });
+
+  // Only that one 400 is a state; every other refusal is still a refusal. Swallowing them all
+  // would turn a rejected set id into an export that polls until the wait budget runs out.
+  test('getSubscriberSetExport still throws on a 400 that is not the pending state', async () => {
+    msw.server.use(msw.exportStatusHandler(() =>
+      HttpResponse.json({error: 'Subscriber set not found', type: 'single'}, {status: 400})
+    ));
+
+    const error = await createApi().getSubscriberSetExport(EXPORT_ID).catch((e) => e);
+
+    assert.match(error.message, /^SubstackAPIException: 400\b/);
+  });
+
+  // The thrown message carries only the status, so without these the body Substack sent to explain
+  // the refusal is readable in the log and nowhere else — which is what made #25 present as a bare
+  // "400 Bad Request" with no hint of which of the four steps failed.
+  test('a failing status attaches its status and body to the error', async () => {
+    msw.server.use(msw.exportStatusHandler(() =>
+      HttpResponse.json({error: 'Export not ready', type: 'single'}, {status: 418})
+    ));
+
+    const error = await createApi().getSubscriberSetExport(EXPORT_ID).catch((e) => e);
+
+    assert.equal(error.status, 418);
+    assert.match(error.body, /Export not ready/);
+  });
+
   // The export answers with a relative url, so it has to be resolved against the publication host
   // rather than concatenated onto publication_url — which already ends in /api/v1 and would produce
   // /api/v1/api/v1/...
