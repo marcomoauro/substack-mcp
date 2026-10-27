@@ -65,6 +65,7 @@ describe('MCP server — list_tools', () => {
     'publish_draft',
     'restack_item',
     'set_post_body',
+    'set_post_body_from_markdown',
     'update_draft',
     'upload_image',
   ];
@@ -446,6 +447,54 @@ describe('MCP server — set_post_body over the protocol', () => {
 
       assert.equal(result.isError, true);
       assert.match(result.content[0].text, /at most one paywall/i);
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('MCP server — set_post_body_from_markdown over the protocol', () => {
+  async function publishedSchema() {
+    const {client, close} = await connectMcpClient();
+
+    try {
+      const {tools} = await client.listTools();
+      return tools.find(tool => tool.name === 'set_post_body_from_markdown')?.inputSchema;
+    } finally {
+      await close();
+    }
+  }
+
+  test('is published with exactly a draft_id and a markdown string', async () => {
+    const schema = await publishedSchema();
+
+    assert.ok(schema, 'set_post_body_from_markdown should be registered');
+    assert.deepEqual(Object.keys(schema.properties).sort(), ['draft_id', 'markdown']);
+    assert.equal(schema.properties.markdown.type, 'string');
+    assert.equal(schema.additionalProperties, false);
+  });
+
+  // The reason this is a separate tool rather than an alternative on set_post_body: it must not carry
+  // the document schema a second time. A ceiling, not an exact count, so a description edit does not
+  // break it but an accidental `body: postBodySchema` does.
+  test('publishes in under 2 KB', async () => {
+    const bytes = JSON.stringify(await publishedSchema()).length;
+
+    assert.ok(bytes < 2048, `the published schema is ${bytes} bytes`);
+  });
+
+  test('reports unconvertible Markdown as an error result naming the problem', async () => {
+    const {client, close} = await connectMcpClient();
+
+    try {
+      const result = await client.callTool({
+        name: 'set_post_body_from_markdown',
+        arguments: {draft_id: 1, markdown: '| a |\n|---|\n| b |'},
+      });
+
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /table/);
+      assert.match(result.content[0].text, /nothing was written/);
     } finally {
       await close();
     }

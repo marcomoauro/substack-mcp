@@ -2,6 +2,7 @@ import {readFileSync} from "node:fs";
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {createDraftPostSchema, createDraftPostHandler} from "./tools/create_draft_post.js";
 import {setPostBodySchema, setPostBodyHandler} from "./tools/set_post_body.js";
+import {setPostBodyFromMarkdownSchema, setPostBodyFromMarkdownHandler} from "./tools/set_post_body_from_markdown.js";
 import {uploadImageSchema, uploadImageHandler} from "./tools/upload_image.js";
 import {listSubscribersSchema, listSubscribersHandler} from "./tools/list_subscribers.js";
 import {exportSubscribersSchema, exportSubscribersHandler} from "./tools/export_subscribers.js";
@@ -53,12 +54,24 @@ export const tools = {
     // a second copy of it that can drift.
     description:
       "replace the body of a draft with a Substack document. This is the only way to write " +
-      "structured content — headings, lists, links, code blocks, images, buttons and a paywall. " +
+      "every kind of structured content — headings, lists, links, code blocks, images, buttons and " +
+      "a paywall; set_post_body_from_markdown covers the subset Markdown can express. " +
       "Create the draft first with create_draft_post, then call this with its id. The result " +
       "reports how many nodes of each type were stored, so a caller can confirm that what it " +
       "asked for is there. An image must already be hosted by Substack: this cannot upload one.",
     schema: setPostBodySchema,
     handler: setPostBodyHandler,
+  },
+  set_post_body_from_markdown: {
+    description:
+      "replace the body of a draft with Markdown, converted to the same Substack document " +
+      "set_post_body writes. Covers headings, emphasis, links, lists, quotes, code blocks, dividers " +
+      "and Substack-hosted images. Conversion is all or nothing: anything Markdown cannot express " +
+      "faithfully is an error naming it, and nothing is written. There is no Markdown for a paywall, " +
+      "a button, a caption or an embed — use set_post_body for a post that needs one. The result " +
+      "reports how many nodes of each type were stored.",
+    schema: setPostBodyFromMarkdownSchema,
+    handler: setPostBodyFromMarkdownHandler,
   },
   upload_image: {
     description:

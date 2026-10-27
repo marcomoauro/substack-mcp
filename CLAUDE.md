@@ -63,7 +63,8 @@ the `v<version>` Docker identifier from `package.json` before publishing.
 - `src/tools/<name>.js` — one file per MCP tool, exporting a zod schema and a handler.
 - `src/api/substack/` — `SubstackApi` (HTTP), `SubstackPost` (ProseMirror document builder),
   `SubscriberQuery` (the subscriber filter DSL) and `image.js` (the guarded fetch of a
-  caller-chosen URL, shared by `upload_image` and `update_draft`'s `cover_image`).
+  caller-chosen URL, shared by `upload_image` and `update_draft`'s `cover_image`), and `markdown.js`
+  (Markdown to the `postBodySchema` document, all or nothing, behind `set_post_body_from_markdown`).
 - `src/logger.js` — the only place that writes a log line. No dependencies, no state.
 - `test/helpers/` — shared test helpers only; no tests live here.
 

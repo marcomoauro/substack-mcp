@@ -210,8 +210,9 @@ There is no paging: an export covers the whole matching set.
 <details>
 <summary><strong>set_post_body</strong> - Replace a draft's body with a structured document</summary>
 
-The only way to write structured content: headings, lists, links, code blocks, quotes, images,
-buttons and a paywall. `create_draft_post` takes plain text; this takes the document Substack
+The only way to write every kind of structured content: headings, lists, links, code blocks,
+quotes, images, buttons and a paywall. (`set_post_body_from_markdown` writes the subset Markdown can
+express.) `create_draft_post` takes plain text; this takes the document Substack
 actually stores, and its schema is published in `tools/list` so the calling model can read the node
 vocabulary instead of guessing.
 
@@ -235,6 +236,42 @@ Three things worth knowing:
   it undefined which one cuts the post, so this tool refuses the second.
 - **`ordered_list` numbers from `attrs.order`, not `attrs.start`.** A list given only `start`
   renders from 1 with no error.
+</details>
+
+<details>
+<summary><strong>set_post_body_from_markdown</strong> - Replace a draft's body with Markdown</summary>
+
+Converts Markdown to the same document `set_post_body` writes, for posts that need nothing
+Markdown cannot say. The idea comes from [nanameru/substack-mcp](https://github.com/nanameru/substack-mcp),
+whose `content_markdown` parameter accepts Markdown for a draft; the converter here is an independent
+implementation written against this server's document schema.
+
+**Inputs**:
+- `draft_id` (number): the id returned by `list_posts` or `create_draft_post`
+- `markdown` (string): the post body in Markdown
+
+| Markdown | Stored as |
+|---|---|
+| `#` … `######` | `heading` with `level` 1–6 |
+| paragraph, line ending in two spaces or `\` | `paragraph`, `hard_break` |
+| `**bold**`, `*italic*`, `~~struck~~`, `` `code` ``, `[text](https://…)` | marks `strong`, `em`, `strikethrough`, `code`, `link` |
+| `-` / `*` list, `1.` list (nested too) | `bullet_list`, `ordered_list` (`attrs.order` when it does not start at 1) |
+| `>` quote | `blockquote` |
+| fenced code block, with or without a language | `highlighted_code_block` |
+| `---` | `horizontal_rule` |
+| `![alt](https://substackcdn.com/…)` on its own line | `captionedImage` › `image2` |
+
+**Conversion is all or nothing.** Anything without a faithful node is an error that lists every
+problem, and nothing is written: tables, raw HTML, task lists, relative links, an image inside a
+line, list or quote, an image not hosted by Substack (re-host it with `upload_image`), and a link to
+`%%checkout_url%%` or `%%share_url%%` — that is a `button` in disguise, and would render as a plain
+link.
+
+**Markdown has no paywall, button, caption or embed.** Use `set_post_body` for a post that needs one
+— for instance, convert here, read the draft back with `get_draft`, add the nodes, and write it with
+`set_post_body`.
+
+**Returns**: `{draft_id, nodes}`, the same tally `set_post_body` returns.
 </details>
 
 <details>
