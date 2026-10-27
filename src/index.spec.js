@@ -166,6 +166,7 @@ describe('entrypoint — stdio transport', () => {
       'publish_draft',
       'restack_item',
       'set_post_body',
+      'set_post_body_from_markdown',
       'update_draft',
       'upload_image',
     ]);
